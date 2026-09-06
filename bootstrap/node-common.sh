@@ -10,6 +10,21 @@ set -euo pipefail
 
 KUBERNETES_MINOR="1.33"
 
+# SCRIPT_DIR-relative, not a fixed repo-relative path - when run.sh drives
+# this over SSH, this script lands flattened at /tmp/node-common.sh, and
+# run.sh's own per-host loop copies bootstrap/lib/ alongside it to /tmp/lib
+# specifically so this resolves the same way there as it does when this
+# script runs from a full repo checkout (e.g. this file's own CI job). See
+# run.sh's "scp -r ... /tmp/lib" comment for the other half of this coupling.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bootstrap/lib/os-family.sh
+source "${SCRIPT_DIR}/lib/os-family.sh"
+OS_FAMILY="$(detect_os_family)"
+echo "node-common: detected OS family: ${OS_FAMILY}"
+# shellcheck disable=SC1090 # dynamic path, resolved to one of this
+# directory's own lib/{debian,rhel}.sh at runtime - see os-family.sh.
+source "${SCRIPT_DIR}/lib/${OS_FAMILY}.sh"
+
 echo "node-common: disabling swap"
 sudo swapoff -a
 sudo sed -i '/\sswap\s/s/^/#/' /etc/fstab
@@ -30,34 +45,8 @@ net.ipv4.ip_forward                 = 1
 EOF
 sudo sysctl --system >/dev/null
 
-echo "node-common: installing containerd"
-sudo apt-get update -qq
-sudo apt-get install -y -qq containerd
-sudo mkdir -p /etc/containerd
-containerd config default | sudo tee /etc/containerd/config.toml >/dev/null
-# kubelet's own default cgroup driver is systemd; containerd's default
-# config.toml ships with SystemdCgroup = false, which silently mismatches
-# and produces a kubelet that starts but never reports Ready.
-sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-sudo systemctl restart containerd
-sudo systemctl enable containerd >/dev/null
+os_install_containerd
 
-echo "node-common: installing kubelet, kubeadm, kubectl (v${KUBERNETES_MINOR})"
-sudo apt-get install -y -qq apt-transport-https ca-certificates curl gpg
-sudo mkdir -p /etc/apt/keyrings
-# --yes --batch: dearmor non-interactively even if the destination already
-# exists (e.g. a pre-provisioned image that already ships this exact
-# keyring) - without it, gpg prompts to overwrite via /dev/tty, which
-# doesn't exist in a non-interactive SSH/CI invocation, contradicting this
-# script's own "safe to re-run" claim above.
-curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_MINOR}/deb/Release.key" \
-  | sudo gpg --yes --batch --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_MINOR}/deb/ /" \
-  | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
-sudo apt-get update -qq
-sudo apt-get install -y -qq kubelet kubeadm kubectl
-sudo apt-mark hold kubelet kubeadm kubectl >/dev/null
-
-sudo systemctl enable kubelet >/dev/null
+os_install_kube_packages "$KUBERNETES_MINOR"
 
 echo "node-common: done"

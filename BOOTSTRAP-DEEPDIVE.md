@@ -38,7 +38,17 @@ The rest of this doc walks through what each step actually does, in the same ord
 
 ## 1. Prerequisites on the node (`node-common.sh`)
 
-Runs identically on every node, before anything role-specific happens. Three things, in order:
+Runs identically on every node, before anything role-specific happens. Three things, in order.
+
+The swap/kernel-module/sysctl steps below are distro-agnostic and run the same regardless of OS.
+The containerd and kubelet/kubeadm/kubectl install steps are not: `node-common.sh` first calls
+`detect_os_family` (`bootstrap/lib/os-family.sh`), which reads `/etc/os-release` and sources either
+`bootstrap/lib/debian.sh` or `bootstrap/lib/rhel.sh` before calling `os_install_containerd` and
+`os_install_kube_packages` - a shared function-name contract, one implementation per package-manager
+family, rather than a distro check inline in this script. This walkthrough describes the
+`debian.sh` path (`apt`-based Ubuntu/Debian), the one real cluster this project's own CI actually
+bootstraps end to end - see [`bootstrap/README.md`](bootstrap/README.md)'s "Known limitations" for
+what level of verification the `rhel.sh` (`dnf`-based RHEL/Rocky/Fedora) path has instead.
 
 **Swap is disabled.** `swapoff -a`, plus commenting out the swap line in `/etc/fstab` so it stays
 off across a reboot. The kubelet refuses to start with swap enabled by default - this isn't a
