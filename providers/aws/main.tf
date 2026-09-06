@@ -87,7 +87,7 @@ resource "aws_key_pair" "this" {
 
 resource "aws_security_group" "this" {
   name        = var.cluster_name
-  description = "clusterdrill-lab: SSH and Kubernetes API from the operator's own CIDR, full traffic between the lab's own nodes for pod networking/kubelet/etcd."
+  description = "clusterdrill-lab: SSH and Kubernetes API from the operator CIDR, full traffic between nodes in this lab for pod networking/kubelet/etcd."
   vpc_id      = aws_vpc.this.id
 
   tags = local.common_tags
@@ -127,7 +127,7 @@ resource "aws_vpc_security_group_ingress_rule" "nodeport_range" {
 # the internet.
 resource "aws_vpc_security_group_ingress_rule" "intra_cluster" {
   security_group_id            = aws_security_group.this.id
-  description                  = "All traffic between this lab's own nodes"
+  description                  = "All traffic between nodes in this lab"
   referenced_security_group_id = aws_security_group.this.id
   ip_protocol                  = "-1"
 }
