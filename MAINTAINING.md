@@ -39,14 +39,14 @@ snapshot of the application itself.
 ## Releases are automated by release-please
 
 [`release-please`](https://github.com/googleapis/release-please) reads
-[Conventional Commits](https://www.conventionalcommits.org/) on the
-`clusterdrill-lab` branch and maintains a standing "release PR" that
+[Conventional Commits](https://www.conventionalcommits.org/) on this
+repository's `main` branch and maintains a standing "release PR" that
 accumulates a `CHANGELOG.md` entry and the next version number. See
 [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml),
 [`release-please-config.json`](release-please-config.json), and
 [`.release-please-manifest.json`](.release-please-manifest.json).
 
-**This means every commit merged to `clusterdrill-lab` needs a
+**This means every commit merged to `main` needs a
 Conventional Commits prefix** (`fix:`, `feat:`, `chore:`, `docs:`, etc.,
 optionally with a `!` or a `BREAKING CHANGE:` footer for a breaking
 change) for release-please to include it correctly - a commit release-please

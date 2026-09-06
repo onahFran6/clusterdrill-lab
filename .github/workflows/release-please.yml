@@ -1,9 +1,9 @@
 name: release-please
 
-# Maintains a standing "release PR" against clusterdrill-lab that
-# accumulates a CHANGELOG entry and the next semantic version from
-# Conventional Commits merged since the last release, and - once that PR
-# is merged - tags the release and publishes a GitHub Release. See
+# Maintains a standing "release PR" against main that accumulates a
+# CHANGELOG entry and the next semantic version from Conventional Commits
+# merged since the last release, and - once that PR is merged - tags the
+# release and publishes a GitHub Release. See
 # MAINTAINING.md's "Cutting a release" section for the full runbook this
 # fits into (bump a pin -> compatibility.json -> README matrix -> E2E ->
 # merge the release-please PR -> tag exists).
@@ -21,7 +21,7 @@ name: release-please
 
 on:
   push:
-    branches: [clusterdrill-lab]
+    branches: [main]
 
 permissions:
   contents: write
@@ -33,6 +33,6 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          target-branch: clusterdrill-lab
+          target-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
