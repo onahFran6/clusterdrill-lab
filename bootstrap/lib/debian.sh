@@ -50,6 +50,8 @@ os_install_appliance_python_deps() {
   # Ubuntu 22.04 target (see ../../compatibility.json's os.release) without
   # depending on the distro's own default ever changing.
   sudo apt-get install -y -qq python3-pip python3.11 python3.11-venv pipx
+  CLUSTERDRILL_PYTHON_BIN="python3.11"
+  export CLUSTERDRILL_PYTHON_BIN
   pipx ensurepath
   export PATH="$HOME/.local/bin:$PATH"
   # Ubuntu 22.04's apt-shipped pipx is 1.0.0, which predates the `pipx

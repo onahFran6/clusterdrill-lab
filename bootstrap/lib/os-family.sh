@@ -11,6 +11,8 @@
 # family library's own problem, decided from the same sourced /etc/os-release
 # fields - see rhel.sh.
 
+# shellcheck disable=SC2120 # $1 is an optional override real callers never
+# pass - see check_os_family_detection.sh's own fixture-file callers, which do.
 detect_os_family() {
   # Optional $1 overrides which os-release file to read - real callers never
   # pass it (the default is the real, standard path), but it lets
