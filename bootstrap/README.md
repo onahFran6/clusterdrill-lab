@@ -1,0 +1,96 @@
+# bootstrap/
+
+Cloud-agnostic Kubernetes bootstrap: kubeadm, containerd, Cilium, and the
+`clusterdrill` package. Written fresh against public kubeadm and Cilium
+documentation - no code or text from any private or course-provided
+script. Consumes only the [common output contract](../providers/README.md#the-common-output-contract)
+any `providers/<cloud>/` module produces; nothing here is AWS-specific
+(verify with `grep -ri aws .` from this directory - it should be clean).
+
+## Flow
+
+1. A `providers/<cloud>/` module provisions the nodes (`terraform apply`).
+2. `run.sh` reads that module's Terraform outputs and, over SSH:
+   - Runs [`node-common.sh`](node-common.sh) on every node (disables
+     swap, installs containerd, kubelet, kubeadm, kubectl).
+   - Runs [`control-plane.sh`](control-plane.sh) on the control-plane
+     node (`kubeadm init`, installs Cilium, installs and deploys
+     `clusterdrill`, generates the worker join command).
+   - Runs [`worker.sh`](worker.sh) on every worker node (`kubeadm join`,
+     using the command `control-plane.sh` generated).
+
+```sh
+terraform -chdir=../providers/aws output -json > outputs.json
+./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
+`../compatibility.json` is the machine-readable contract between this lab
+and the `clusterdrill` application release it installs - supported
+Kubernetes range, the exact app version/image digest, the install method,
+required privileges, and the smoke-test command `control-plane.sh` itself
+runs. `check_compatibility_contract.sh` verifies it stays in sync with
+the actual pinned values in `node-common.sh`/`control-plane.sh` - CI runs
+it on every change to any of the three.
+
+### Installing while the app repository is still private
+
+No `clusterdrill` package is published to PyPI - `control-plane.sh`
+installs a wheel from the app repository's own GitHub Release instead
+(see `compatibility.json`'s `app.install_method`). That works with a
+plain public URL once the app repository is public; until then, pass a
+GitHub token (one that can read that repository) as `run.sh`'s third
+argument - a **file path**, never the token value itself, the same
+convention `run.sh` already uses for the SSH private key:
+
+```sh
+./run.sh outputs.json ~/.ssh/id_ed25519 ~/.clusterdrill-github-token
+```
+
+The token file is copied to the control-plane node, used once, and
+deleted immediately after - it's never logged, never becomes a
+command-line argument on either end of the SSH connection, and this
+repository never sees its contents.
+
+## Known limitations
+
+- **The deployed image may be stale.** `control-plane.sh` resolves the
+  image the same way the Minikube path's `clusterdrill local install`
+  does without `--image`: the release digest paired with the installed
+  package version. Until a release matching current source is
+  published, this is a real, honest limitation - see the practice-bank
+  README's "Release policy" section for the full explanation of why an
+  older published image doesn't reflect current source.
+- **Single control-plane, not HA.** This is a disposable practice lab,
+  not a production reference architecture - one control-plane node is
+  the deliberate scope.
+- **The kubeadm/Cilium/clusterdrill bootstrap flow is verified in CI on a
+  real single-node kubeadm cluster** (`.github/workflows/lab-quality-gate.yml`'s
+  `app-lab-compatibility-e2e` job - node-common.sh and control-plane.sh
+  run for real on the CI runner itself, install the exact published
+  release, and the deployed appliance's own smoke test must pass) **- but
+  not yet against a real AWS-provisioned EC2 instance specifically.**
+  `../providers/aws/` validates cleanly (`terraform validate`, a Trivy
+  config scan), but actually applying real AWS infrastructure costs real
+  money and hasn't been done. Treat a first real AWS run as a validation
+  step for the provisioning layer specifically, not an assumed-working
+  deployment; report anything that doesn't match what's documented here.
+
+## Security notes
+
+- `run.sh` uses `StrictHostKeyChecking=accept-new`, not `no` - it trusts
+  a host key on first connection (normal for a freshly-provisioned,
+  never-before-seen instance) but still detects and refuses a *changed*
+  key on a later connection.
+- No script here ever reads, logs, or transmits your SSH private key
+  contents - `run.sh` only ever passes `-i <path>` to `ssh`/`scp`,
+  which read the file locally themselves.
+- `control-plane.sh` generates a random login password for the
+  appliance and prints it once at the end of the run - it is not
+  written to any file this script controls beyond the in-cluster
+  Secret `local_install` itself already creates.
+- A GitHub token, when supplied for the still-private-app-repository
+  fetch above, is only ever a file path passed between `run.sh` and
+  `control-plane.sh` - never a command-line argument or logged value on
+  either end of the SSH connection - and `control-plane.sh` deletes the
+  remote copy of that file immediately after using it, on every exit
+  path (a `trap`, not just the success path).

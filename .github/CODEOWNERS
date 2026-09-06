@@ -1,0 +1,20 @@
+# CODEOWNERS
+#
+# Default: everything not matched below falls back to the repo owner.
+*                           @onahFran6
+
+# Terraform root modules - infrastructure changes need explicit review.
+/providers/                 @onahFran6
+
+# Cloud-agnostic bootstrap - changes here affect every provider.
+/bootstrap/                 @onahFran6
+
+# Governance and legal boundaries need explicit sign-off.
+/LICENSE                    @onahFran6
+/CODE_OF_CONDUCT.md         @onahFran6
+/GOVERNANCE.md              @onahFran6
+/SECURITY.md                @onahFran6
+/SUPPORT.md                 @onahFran6
+/.github/CODEOWNERS         @onahFran6
+/.github/ISSUE_TEMPLATE/    @onahFran6
+/.github/PULL_REQUEST_TEMPLATE.md @onahFran6

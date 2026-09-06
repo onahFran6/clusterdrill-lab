@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question / general discussion
+    url: https://github.com/onahFran6/clusterdrill-lab/discussions
+    about: For "how do I...", "is X supported", or feedback that isn't a confirmed bug - see SUPPORT.md.
+  - name: Report a security vulnerability
+    url: https://github.com/onahFran6/clusterdrill-lab/security/advisories/new
+    about: Do not open a public issue for security reports - see SECURITY.md for details.

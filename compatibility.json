@@ -1,0 +1,23 @@
+{
+  "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs. See bootstrap/control-plane.sh (the code that actually reads app.version/app.image_digest) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/control-plane.sh and bootstrap/node-common.sh, together in the same commit whenever any of them change - they must never drift apart.",
+  "app": {
+    "package": "clusterdrill",
+    "version": "0.1.0",
+    "image_repository": "docker.io/w00dson/clusterdrill",
+    "image_digest": "sha256:2b6b2979775c49a71742f7867a38a059f9723f11c14abbffea3fb1e7922b873e",
+    "release_repository": "onahFran6/clusterdrill",
+    "install_method": "pip/pipx wheel install from a GitHub Release asset (release_repository, tag v<version>) - not PyPI, which has no clusterdrill package. See bootstrap/control-plane.sh.",
+    "required_privileges": "A single namespaced ClusterRole/ClusterRoleBinding pair scoped to the resource kinds the practice-bank question set actually needs (core, apps, batch, autoscaling, networking.k8s.io, policy, rbac.authorization.k8s.io, storage.k8s.io, apiextensions.k8s.io, plus explicitly-named questions/helm-crds CRD groups) - no cluster-admin binding, no wildcard apiGroup. See practice-bank/clusterdrill/manifests/local-appliance.yaml's ClusterRole and practice-bank/README.md's Security limits section.",
+    "smoke_test_command": "kubectl -n clusterdrill-system rollout status deployment/clusterdrill-web --timeout=5m"
+  },
+  "kubernetes": {
+    "bootstrap_pinned_minor": "1.33",
+    "bootstrap_pinned_patch": "kubelet/kubeadm/kubectl resolve to whatever pkgs.k8s.io's stable:/v1.33 apt channel serves at install time - the minor is pinned (bootstrap/node-common.sh's KUBERNETES_MINOR), the exact patch is not",
+    "supported_range": "Any Kubernetes minor where apps/v1, rbac.authorization.k8s.io/v1, and core v1 are the stable API versions (true since 1.19) - the manifest uses only those, no alpha/beta APIs. Not independently tested across a version matrix beyond the pinned bootstrap minor above."
+  },
+  "os": {
+    "distribution": "Ubuntu",
+    "release": "22.04",
+    "architectures": ["amd64", "arm64"]
+  }
+}

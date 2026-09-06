@@ -1,0 +1,183 @@
+name: Lab quality gate
+
+# The pre-merge quality gate for this repository's Terraform root modules
+# and bootstrap scripts. Every job here validates or statically scans
+# Terraform source and shell scripts without applying anything or using a
+# real cloud credential - a fork's pull_request run gets the same
+# behavior as a trusted one.
+#
+# Third-party Actions below are pinned to a full commit SHA, not a
+# mutable tag - the trailing `# vX` comment is only a human-readable
+# label. To bump one: `gh api repos/<owner>/<repo>/git/refs/tags/<new-tag>
+# --jq .object.sha`.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  terraform-fmt-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+        working-directory: providers/aws
+
+      - name: terraform init (no backend, no credentials)
+        run: terraform init -backend=false -input=false
+        working-directory: providers/aws
+
+      - name: terraform validate
+        run: terraform validate
+        working-directory: providers/aws
+
+  terraform-security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Static Terraform misconfiguration scan - reads source only, never
+      # applies anything and needs no cloud credential. Trivy's `config`
+      # scanner covers the same IaC-misconfiguration category the
+      # now-deprecated standalone tfsec used to; using it here keeps this
+      # repository's security-scanning tooling to one vendor.
+      - name: Trivy Terraform config scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: providers
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  bootstrap-shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: ShellCheck
+        run: shellcheck bootstrap/*.sh
+
+  # Proves compatibility.json's contract holds for real, without any real
+  # cloud spend - a real kubeadm single-node cluster, bootstrapped on this
+  # runner itself (no EC2, no Terraform), installing the exact published
+  # app release (not PyPI, which has no clusterdrill package; not
+  # `latest`) and passing its own smoke test. runs-on is ubuntu-22.04
+  # specifically, not ubuntu-latest, matching compatibility.json's own
+  # documented OS support exactly rather than whatever ubuntu-latest
+  # happens to alias to when this workflow runs.
+  app-lab-compatibility-e2e:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify the compatibility contract matches the bootstrap scripts
+        run: bash bootstrap/check_compatibility_contract.sh
+
+      # GitHub-hosted ubuntu-22.04 runners ship ~20GB+ of large toolchains
+      # this job never uses (dotnet, Haskell, Android, Swift) alongside
+      # only ~10-15GB actually free - not enough headroom once kubeadm,
+      # Cilium, and the appliance image are all pulled, which caused a
+      # real failure here: kubelet evicted the clusterdrill-web pod for
+      # ephemeral-storage pressure before it ever got to run. This is the
+      # standard, widely-used GitHub Actions disk-space mitigation, not
+      # something specific to this lab.
+      - name: Free up disk space (unrelated preinstalled toolchains)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/powershell /usr/local/share/chromium /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune -a -f 2>/dev/null || true
+          df -h /
+
+      # The real v0.1.0 release lives in this repository today only
+      # because the app hasn't been extracted to its own standalone
+      # repository yet - the ambient, already-scoped-to-this-repo
+      # GITHUB_TOKEN reads its release assets. This file is deleted by
+      # control-plane.sh itself once the fetch completes.
+      - name: Write a token file for the release-asset fetch
+        run: |
+          echo -n "${{ secrets.GITHUB_TOKEN }}" > /tmp/gh-token
+          chmod 600 /tmp/gh-token
+
+      # Run as the plain runner user, not `sudo bash ...` - these scripts
+      # sudo internally only where needed (matching the real flow, where
+      # the SSH login user is a non-root `ubuntu` with passwordless sudo,
+      # same as this runner's own default user). Wrapping the whole
+      # invocation in sudo would make $HOME resolve to /root inside the
+      # script instead of this user's real home, breaking the kubeconfig
+      # path control-plane.sh writes to and kubectl commands below expect.
+      - name: Bootstrap this runner as a single-node cluster
+        run: |
+          bash bootstrap/node-common.sh
+          bash bootstrap/control-plane.sh 127.0.0.1 /tmp/gh-token "${{ github.repository }}"
+        env:
+          # This runner has no separate worker node at all, unlike a real
+          # lab (which always provisions >= 1) - without this, the
+          # appliance Deployment can never schedule: the control-plane's
+          # default NoSchedule taint has nowhere else for it to go here.
+          CLUSTERDRILL_LAB_SINGLE_NODE: "1"
+
+      - name: Verify the deployed appliance is the exact contracted digest
+        run: |
+          kubectl config set-context --current --namespace=clusterdrill-system
+          RUNNING_IMAGE="$(kubectl get deployment clusterdrill-web -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          CONTRACT_DIGEST="$(python3 -c "import json; c=json.load(open('compatibility.json')); print(f\"{c['app']['image_repository']}@{c['app']['image_digest']}\")")"
+          echo "running:  ${RUNNING_IMAGE}"
+          echo "contract: ${CONTRACT_DIGEST}"
+          test "${RUNNING_IMAGE}" = "${CONTRACT_DIGEST}"
+
+      - name: Smoke test - reach the appliance through its NodePort
+        run: |
+          NODEPORT="$(kubectl get svc clusterdrill -o jsonpath='{.spec.ports[0].nodePort}')"
+          curl -fsS --retry 5 --retry-delay 3 "http://127.0.0.1:${NODEPORT}/" > /dev/null
+          echo "smoke test: appliance responded on NodePort ${NODEPORT}"
+
+      # This job can't be dry-run locally (it needs a real kubeadm cluster)
+      # - if a step above fails, this is the only way to see why from the
+      # workflow log alone.
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "--- kubectl get nodes ---"
+          kubectl get nodes -o wide || true
+          echo "--- kubectl get pods -A ---"
+          kubectl get pods -A -o wide || true
+          echo "--- kubectl get events -A (most recent) ---"
+          kubectl get events -A --sort-by=.lastTimestamp || true
+          echo "--- clusterdrill-web pod describe (exact exit reason/code, events) ---"
+          kubectl -n clusterdrill-system describe pods -l app.kubernetes.io/name=clusterdrill || true
+          echo "--- clusterdrill-web pod logs (current) ---"
+          kubectl -n clusterdrill-system logs deployment/clusterdrill-web --all-containers --tail=200 || true
+          echo "--- clusterdrill-web pod logs (previous container, if it restarted) ---"
+          kubectl -n clusterdrill-system logs deployment/clusterdrill-web --all-containers --previous --tail=200 || true
+          echo "--- disk usage (a disk-pressure taint would also block scheduling) ---"
+          df -h || true
+          echo "--- cilium status ---"
+          cilium status || true
+          echo "--- containerd status ---"
+          sudo systemctl status containerd --no-pager || true
+          echo "--- kubelet status ---"
+          sudo systemctl status kubelet --no-pager || true

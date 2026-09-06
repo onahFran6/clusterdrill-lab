@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Orchestrates node-common.sh, control-plane.sh, and worker.sh over SSH
+# against whatever providers/<cloud> module produced - reads only the
+# common output contract (control_plane_ip, worker_ips, ssh_user,
+# ssh_key_name), never anything cloud-specific. See ../providers/README.md.
+#
+# Usage:
+#   terraform -chdir=../providers/aws output -json > outputs.json
+#   ./run.sh outputs.json ~/.ssh/id_ed25519
+#   ./run.sh outputs.json ~/.ssh/id_ed25519 ~/.github-token   # while the
+#     clusterdrill app repository is still private - see control-plane.sh
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+  echo "usage: $0 <terraform-outputs.json> <ssh-private-key-path> [github-token-file]" >&2
+  exit 1
+fi
+OUTPUTS_FILE="$1"
+SSH_KEY="$2"
+GITHUB_TOKEN_FILE="${3:-}"
+if [ -n "$GITHUB_TOKEN_FILE" ] && [ ! -f "$GITHUB_TOKEN_FILE" ]; then
+  echo "run.sh: github-token-file not found at $GITHUB_TOKEN_FILE" >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "run.sh: jq is required (brew install jq / apt install jq)" >&2
+  exit 1
+fi
+if [ ! -f "$OUTPUTS_FILE" ]; then
+  echo "run.sh: $OUTPUTS_FILE not found - run 'terraform output -json > $OUTPUTS_FILE' first" >&2
+  exit 1
+fi
+if [ ! -f "$SSH_KEY" ]; then
+  echo "run.sh: SSH private key not found at $SSH_KEY" >&2
+  exit 1
+fi
+
+CONTROL_PLANE_IP="$(jq -r '.control_plane_ip.value' "$OUTPUTS_FILE")"
+mapfile -t WORKER_IPS < <(jq -r '.worker_ips.value[]' "$OUTPUTS_FILE")
+SSH_USER="$(jq -r '.ssh_user.value' "$OUTPUTS_FILE")"
+
+if [ -z "$CONTROL_PLANE_IP" ] || [ "$CONTROL_PLANE_IP" = "null" ]; then
+  echo "run.sh: control_plane_ip missing from $OUTPUTS_FILE - did 'terraform apply' finish?" >&2
+  exit 1
+fi
+
+SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
+
+wait_for_ssh() {
+  local host="$1"
+  echo "run.sh: waiting for SSH on $host"
+  for _ in $(seq 1 30); do
+    if ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" true 2>/dev/null; then
+      return 0
+    fi
+    sleep 10
+  done
+  echo "run.sh: timed out waiting for SSH on $host" >&2
+  return 1
+}
+
+run_remote_script() {
+  local host="$1"
+  local script="$2"
+  shift 2
+  local remote_name
+  remote_name="$(basename "$script")"
+  scp "${SSH_OPTS[@]}" -q "$script" "${SSH_USER}@${host}:/tmp/${remote_name}"
+  # remote_name and "$@" are expanded locally on purpose - a fixed command
+  # string sent to the remote shell, not something evaluated remotely.
+  # shellcheck disable=SC2029
+  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" "bash /tmp/${remote_name} $*"
+}
+
+echo "run.sh: control-plane is ${CONTROL_PLANE_IP}, ${#WORKER_IPS[@]} worker(s): ${WORKER_IPS[*]}"
+
+for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
+  wait_for_ssh "$host"
+  run_remote_script "$host" "${SCRIPT_DIR}/node-common.sh"
+done
+
+echo "run.sh: bootstrapping the control plane"
+REMOTE_TOKEN_FILE=""
+if [ -n "$GITHUB_TOKEN_FILE" ]; then
+  REMOTE_TOKEN_FILE="/tmp/clusterdrill-github-token"
+  scp "${SSH_OPTS[@]}" -q "$GITHUB_TOKEN_FILE" "${SSH_USER}@${CONTROL_PLANE_IP}:${REMOTE_TOKEN_FILE}"
+  # REMOTE_TOKEN_FILE is a fixed literal this script sets above, not user
+  # input - client-side expansion here is intentional, same as
+  # run_remote_script's own remote_name below.
+  # shellcheck disable=SC2029
+  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" "chmod 600 ${REMOTE_TOKEN_FILE}"
+fi
+run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/control-plane.sh" "$CONTROL_PLANE_IP" "$REMOTE_TOKEN_FILE"
+
+echo "run.sh: fetching the join command"
+scp "${SSH_OPTS[@]}" -q "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/kubeadm-join-command.sh" /tmp/kubeadm-join-command.sh
+
+for host in "${WORKER_IPS[@]}"; do
+  echo "run.sh: joining worker $host"
+  scp "${SSH_OPTS[@]}" -q /tmp/kubeadm-join-command.sh "${SSH_USER}@${host}:/tmp/kubeadm-join-command.sh"
+  run_remote_script "$host" "${SCRIPT_DIR}/worker.sh"
+done
+rm -f /tmp/kubeadm-join-command.sh
+
+echo "run.sh: done. SSH to the control plane to use kubectl:"
+echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP}"

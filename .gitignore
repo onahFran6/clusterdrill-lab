@@ -1,0 +1,18 @@
+# Terraform local state and provider cache - never committed. The lock
+# file (.terraform.lock.hcl) is the opposite: always committed, per each
+# root module's own directory, so the negation below is explicit rather
+# than relying on it simply not matching a broader "**/.terraform/" glob.
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/*.tfplan
+**/crash.log
+**/crash.*.log
+!**/.terraform.lock.hcl
+
+# Real variable values - only *.tfvars.example is committed.
+**/*.tfvars
+!**/*.tfvars.example
+
+# OS / editor
+.DS_Store
