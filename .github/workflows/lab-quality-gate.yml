@@ -112,11 +112,18 @@ jobs:
           sudo docker image prune -a -f 2>/dev/null || true
           df -h /
 
-      # The real v0.1.0 release lives in this repository today only
-      # because the app hasn't been extracted to its own standalone
-      # repository yet - the ambient, already-scoped-to-this-repo
-      # GITHUB_TOKEN reads its release assets. This file is deleted by
-      # control-plane.sh itself once the fetch completes.
+      # deploy-appliance.sh's own default CLUSTERDRILL_APP_REPO is
+      # onahFran6/clusterdrill - the real, now-extracted standalone
+      # application repository - so no override argument is passed here
+      # any more. While that repository is still private, this ambient
+      # GITHUB_TOKEN (scoped only to *this* repository by GitHub Actions)
+      # cannot read its release assets cross-repo; a real fix needs
+      # either that repository to be public, or a separate PAT with read
+      # access to it, stored as a dedicated secret here. Until one of
+      # those happens, this step's own fetch fails, and so does the rest
+      # of this job (see deploy-appliance.sh's own error message). This
+      # file is deleted by control-plane.sh itself once the fetch
+      # completes.
       - name: Write a token file for the release-asset fetch
         run: |
           echo -n "${{ secrets.GITHUB_TOKEN }}" > /tmp/gh-token
@@ -133,7 +140,7 @@ jobs:
         run: |
           bash bootstrap/node-common.sh
           bash bootstrap/control-plane.sh 127.0.0.1
-          bash bootstrap/deploy-appliance.sh /tmp/gh-token "${{ github.repository }}"
+          bash bootstrap/deploy-appliance.sh /tmp/gh-token
           cp dashboard/headlamp-manifest.yaml /tmp/headlamp-manifest.yaml
           bash bootstrap/deploy-headlamp.sh
         env:
