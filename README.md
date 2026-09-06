@@ -15,6 +15,7 @@ clusterdrill-lab/
     aws/        Terraform root module - provisions the VMs (built first)
     gcp/        reserved seam, not built
   bootstrap/    cloud-agnostic: kubeadm, containerd, Cilium, clusterdrill
+  dashboard/    Headlamp web dashboard, deployed by bootstrap alongside clusterdrill
   LICENSE       MIT
 ```
 
@@ -38,6 +39,18 @@ cd ../../bootstrap
 See [`providers/aws/README.md`](providers/aws/README.md) for
 prerequisites, cost information, and the full lifecycle runbook (destroy,
 recovery, state loss, patch/upgrade, backup, and a compatibility matrix).
+
+## Dashboard
+
+Every lab comes with a [Headlamp](https://github.com/kubernetes-sigs/headlamp)
+web dashboard into the cluster, deployed automatically as part of the
+standard bootstrap - not a separate step. It's RBAC-aware and read-only
+(including Secrets, since this is a single-operator lab where the
+operator already has unrestricted `kubectl` access over SSH). See
+[`bootstrap/README.md`](bootstrap/README.md#flow) for how it fits into
+the bootstrap flow, and
+[`providers/aws/README.md`](providers/aws/README.md#headlamp-dashboard)
+for how to reach it and log in.
 
 ## Lifecycle and ownership
 
