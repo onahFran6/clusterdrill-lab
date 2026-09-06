@@ -6,6 +6,8 @@ documentation - no code or text from any private or course-provided
 script. Consumes only the [common output contract](../providers/README.md#the-common-output-contract)
 any `providers/<cloud>/` module produces; nothing here is AWS-specific
 (verify with `grep -ri aws .` from this directory - it should be clean).
+See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for a diagrammed view of
+how this flow fits into the whole system.
 
 ## Flow
 

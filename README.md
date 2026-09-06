@@ -21,7 +21,8 @@ clusterdrill-lab/
 
 See [`providers/README.md`](providers/README.md) for the output contract
 that connects the two, and [`bootstrap/README.md`](bootstrap/README.md)
-for the bootstrap flow itself.
+for the bootstrap flow itself. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for
+a diagrammed overview of the whole system before diving into either.
 
 ## Quick start (AWS)
 

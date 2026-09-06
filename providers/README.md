@@ -5,7 +5,8 @@ SSH-reachable Ubuntu VMs and hand back a small, fixed set of outputs.
 Nothing past that point (installing Kubernetes, the CNI, the
 `clusterdrill` package) is cloud-specific - see
 [`../bootstrap/`](../bootstrap/), which consumes any provider's outputs
-identically.
+identically. See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for a
+diagrammed view of how this fits into the whole system.
 
 ## The common output contract
 
