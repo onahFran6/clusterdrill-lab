@@ -21,6 +21,19 @@ locals {
 # worker_architecture, so a mixed-architecture lab (e.g. an amd64
 # control-plane with Graviton workers) is a supported combination, not
 # just same-architecture-everywhere.
+#
+# Ubuntu 22.04 (Jammy) is pinned on purpose, not a variable, mirroring how
+# node-common.sh pins KUBERNETES_MINOR: this is a real contract, not just
+# an untested default. compatibility.json's os.release records the same
+# "22.04" pin (os.distribution records "Ubuntu"), and
+# bootstrap/deploy-appliance.sh depends on specifics of it directly -
+# Ubuntu 22.04's system python3 (3.10) and
+# its apt-shipped pipx (1.0.0, which predates the `pipx environment`
+# subcommand deploy-appliance.sh relies on). Changing the AMI filters
+# below to a different release requires re-verifying deploy-appliance.sh
+# against it and updating compatibility.json in the same change - see
+# check_compatibility_contract.sh, which fails if this filter and
+# compatibility.json's os.release drift apart.
 data "aws_ami" "ubuntu_amd64" {
   most_recent = true
   owners      = ["099720109477"]
@@ -56,7 +69,7 @@ data "aws_availability_zones" "available" {
 }
 
 resource "aws_vpc" "this" {
-  cidr_block           = "10.42.0.0/16"
+  cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -79,8 +92,8 @@ resource "aws_internet_gateway" "this" {
 #trivy:ignore:AWS-0164
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
-  cidr_block              = "10.42.1.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[0]
+  cidr_block              = var.public_subnet_cidr
+  availability_zone       = coalesce(var.availability_zone, data.aws_availability_zones.available.names[0])
   map_public_ip_on_launch = true
 
   tags = local.common_tags
@@ -185,7 +198,7 @@ resource "aws_instance" "control_plane" {
 
   root_block_device {
     volume_size = var.root_volume_size_gb
-    volume_type = "gp3"
+    volume_type = var.root_volume_type
     encrypted   = true
   }
 
@@ -211,7 +224,7 @@ resource "aws_instance" "worker" {
 
   root_block_device {
     volume_size = var.root_volume_size_gb
-    volume_type = "gp3"
+    volume_type = var.root_volume_type
     encrypted   = true
   }
 

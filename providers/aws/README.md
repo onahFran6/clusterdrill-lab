@@ -37,6 +37,31 @@ terraform plan
 terraform apply
 ```
 
+### Configuration reference
+
+Every variable in [`variables.tf`](variables.tf), what it defaults to, and why you'd change it:
+
+| Variable | Default | Why you'd change it |
+| --- | --- | --- |
+| `aws_region` | `us-east-1` | Provision closer to you, or in a region where your account has capacity/pricing for the instance types below. |
+| `cluster_name` | `clusterdrill-lab` | Give it a unique value to run more than one lab at once in the same account/region - it prefixes every resource name and tag. |
+| `worker_count` | `1` | Bump it for practice questions that assume more than one worker (must be >= 1). |
+| `control_plane_instance_type` | `t3.medium` | kubeadm's own minimum is 2 vCPU / 2 GiB; this is the tested default. |
+| `worker_instance_type` | `t3.medium` | Same, per worker. |
+| `control_plane_architecture` | `amd64` | Set to `arm64` for a Graviton instance type (e.g. `t4g.medium`) - must match the actual architecture of `control_plane_instance_type`. |
+| `worker_architecture` | `amd64` | Same, for `worker_instance_type` - control-plane and workers may differ (a mixed-architecture lab is supported). |
+| `ssh_public_key` | none, required | Your own SSH public key - this module never generates or holds a private key. |
+| `allowed_ssh_cidr` | none, required | CIDR allowed to reach SSH/the Kubernetes API/NodePorts - deliberately has no default so you choose it, and can't be `0.0.0.0/0`. |
+| `vpc_cidr` | `10.42.0.0/16` | Avoid a collision with a network you already use, or give a second lab a non-overlapping range. |
+| `public_subnet_cidr` | `10.42.1.0/24` | Same, for the subnet - must stay a sub-range of `vpc_cidr`. |
+| `availability_zone` | none - first AZ available | Pin a specific AZ, e.g. for capacity/pricing on a particular instance type. |
+| `root_volume_size_gb` | `30` | More headroom for pulled container images, if you're running many practice questions in one lab without destroying it. |
+| `root_volume_type` | `gp3` | Match your own cost/performance preference for the EBS volume. |
+| `tags` | `{}` | Extra tags merged onto every resource, e.g. for your own cost-allocation tagging scheme. |
+
+The Kubernetes minor version, Cilium version, and pod network CIDR are deliberately **not**
+variables - see the Compatibility matrix below.
+
 Then hand the outputs to the bootstrap step:
 
 ```sh
@@ -205,7 +230,7 @@ up yourself before destroying:
 
 | Component | Version | Pinned? |
 | --- | --- | --- |
-| OS | Ubuntu 22.04 LTS (Jammy) | Yes - AMI filter in `main.tf` |
+| OS | Ubuntu 22.04 LTS (Jammy) | Yes, deliberately - AMI filter in `main.tf`, not a variable. `deploy-appliance.sh` depends on 22.04-specific details (its system Python and apt-shipped pipx version); `compatibility.json`'s `os.release` records the same pin and `check_compatibility_contract.sh` fails if the two drift apart. |
 | Architecture | amd64 or arm64, per node role | Yes - `control_plane_architecture`/`worker_architecture` each select their own Ubuntu 22.04 AMI; defaults to amd64. A mixed lab (e.g. amd64 control-plane, Graviton workers) is supported - the published `clusterdrill` appliance image is a multi-arch manifest, and `bootstrap/control-plane.sh` already resolves the Cilium CLI's architecture dynamically |
 | Kubernetes (kubelet/kubeadm/kubectl) | 1.33.x | Minor pinned (`KUBERNETES_MINOR` in `node-common.sh`); exact patch is whatever `pkgs.k8s.io`'s `stable:/v1.33` channel resolves to at install time |
 | containerd | Ubuntu 22.04's `containerd` apt package | Not pinned - whatever version Ubuntu's own apt repos serve at install time |

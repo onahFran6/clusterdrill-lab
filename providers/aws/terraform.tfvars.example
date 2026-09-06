@@ -20,3 +20,15 @@ worker_instance_type        = "t3.medium"
 # may use different architectures from each other.
 # control_plane_architecture = "arm64"
 # worker_architecture        = "arm64"
+
+# Only needed if the defaults (10.42.0.0/16 / 10.42.1.0/24) collide with
+# your own network, or you want to run more than one lab at once.
+# vpc_cidr           = "10.43.0.0/16"
+# public_subnet_cidr = "10.43.1.0/24"
+
+# Defaults to the first AZ AWS returns for aws_region if omitted.
+# availability_zone = "us-east-1a"
+
+# Defaults to gp3/30 if omitted.
+# root_volume_type    = "gp3"
+# root_volume_size_gb = 30

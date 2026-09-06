@@ -75,10 +75,49 @@ variable "allowed_ssh_cidr" {
   }
 }
 
+variable "vpc_cidr" {
+  description = "CIDR block for the lab's VPC. Change this if your own network (home, office, VPN) already uses part of the default range - 10.x is the most commonly used private range - or if you want to run more than one lab at once with non-overlapping networks."
+  type        = string
+  default     = "10.42.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a valid IPv4 CIDR block, e.g. \"10.42.0.0/16\"."
+  }
+}
+
+variable "public_subnet_cidr" {
+  description = "CIDR block for the lab's single public subnet. Must be a sub-range of vpc_cidr."
+  type        = string
+  default     = "10.42.1.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.public_subnet_cidr, 0))
+    error_message = "public_subnet_cidr must be a valid IPv4 CIDR block, e.g. \"10.42.1.0/24\"."
+  }
+}
+
+variable "availability_zone" {
+  description = "Availability zone (e.g. \"us-east-1a\") to provision the subnet and every node in. Defaults to null, which keeps today's behavior - the first AZ aws_region's own availability_zones data source happens to return. Set this explicitly if you need a specific AZ (e.g. capacity or pricing for a specific instance type)."
+  type        = string
+  default     = null
+}
+
 variable "root_volume_size_gb" {
   description = "Root EBS volume size, in GiB, for every node."
   type        = number
   default     = 30
+}
+
+variable "root_volume_type" {
+  description = "Root EBS volume type for every node."
+  type        = string
+  default     = "gp3"
+
+  validation {
+    condition     = contains(["gp2", "gp3", "io1", "io2", "sc1", "st1", "standard"], var.root_volume_type)
+    error_message = "root_volume_type must be one of: gp2, gp3, io1, io2, sc1, st1, standard."
+  }
 }
 
 variable "tags" {
