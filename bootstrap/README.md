@@ -19,7 +19,12 @@ cluster by hand without running any of these scripts, see
 1. A `providers/<cloud>/` module provisions the nodes (`terraform apply`).
 2. `run.sh` reads that module's Terraform outputs and, over SSH:
    - Runs [`node-common.sh`](node-common.sh) on every node (disables
-     swap, installs containerd, kubelet, kubeadm, kubectl).
+     swap, installs containerd, kubelet, kubeadm, kubectl). The
+     containerd/kube-package install steps dispatch on OS family
+     ([`lib/os-family.sh`](lib/os-family.sh) detects Debian- vs
+     RHEL-family from `/etc/os-release`, then sources
+     [`lib/debian.sh`](lib/debian.sh) or [`lib/rhel.sh`](lib/rhel.sh)) -
+     see "Known limitations" below for how verified each path is.
    - Runs [`control-plane.sh`](control-plane.sh) on the control-plane
      node (`kubeadm init`, installs Cilium, generates the worker join
      command).
@@ -85,6 +90,31 @@ repository never sees its contents.
 - **Single control-plane, not HA.** This is a disposable practice lab,
   not a production reference architecture - one control-plane node is
   the deliberate scope.
+- **The RHEL-family OS path (`lib/rhel.sh`) is implemented but not yet
+  run as a real cluster.** `providers/aws/` only ever provisions Ubuntu
+  today, so there's no real machine anywhere in this project's CI or
+  manual-testing history that actually exercises it - it's shellchecked
+  and its distro-detection logic (`lib/os-family.sh`'s
+  `detect_os_family`) is unit-tested against synthetic `/etc/os-release`
+  fixtures (`check_os_family_detection.sh`), but the package-install
+  steps themselves (containerd via Docker's repo, kubelet/kubeadm/kubectl
+  via `pkgs.k8s.io`'s rpm channel, EPEL/CRB enablement) have only been
+  reviewed against public docs, not run. Fedora is the least-verified
+  distro within that family bucket - it shares `dnf`/RPM with RHEL/Rocky
+  but not their repo layout (no EPEL/CRB needed, and its default
+  `python3` may already be >= 3.11 depending on release). Same honesty
+  bar as the Debian/Ubuntu path's own real-AWS-run note above, just the
+  other direction: this is a real, reviewable gap, not a hidden one.
+- **`run.sh` ships `bootstrap/lib/` to each remote host at a hardcoded
+  path (`/tmp/lib`), coupled to `run_remote_script`'s own hardcoded
+  flatten target (`/tmp/<script-name>`).** Nothing enforces this
+  structurally - if either path ever changes without the other, a real
+  SSH-driven run breaks with a `source: file not found` on the next run,
+  silently, since CI's own e2e job never calls `run.sh` at all (it runs
+  the scripts directly from a full repo checkout, where this coupling
+  doesn't exist). See the cross-referencing comments at `run.sh`'s
+  `scp -r ... /tmp/lib` line and `node-common.sh`/`deploy-appliance.sh`'s
+  `source` line.
 - **The kubeadm/Cilium/clusterdrill bootstrap flow is verified in CI on a
   real single-node kubeadm cluster** (`.github/workflows/lab-quality-gate.yml`'s
   `app-lab-compatibility-e2e` job - node-common.sh, control-plane.sh, and

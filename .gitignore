@@ -20,3 +20,7 @@ bootstrap/outputs.json
 
 # OS / editor
 .DS_Store
+
+# Personal working notes (plans, scratch docs) - never intended for the
+# shared repo or a PR.
+.my-personal-docs/

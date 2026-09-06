@@ -93,6 +93,14 @@ echo "run.sh: control-plane is ${CONTROL_PLANE_IP}, ${#WORKER_IPS[@]} worker(s):
 
 for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
   wait_for_ssh "$host"
+  # node-common.sh and (later, control-plane-only) deploy-appliance.sh
+  # source lib/os-family.sh and lib/{debian,rhel}.sh by a SCRIPT_DIR-relative
+  # path - run_remote_script only ever transfers the one script it's about
+  # to invoke, flattened to /tmp/<name>, so lib/ has to be shipped here too,
+  # to the exact sibling path (/tmp/lib) that flattening implies. Only once
+  # per host: deploy-appliance.sh runs later in this same script but only on
+  # $CONTROL_PLANE_IP, which already has /tmp/lib from this loop iteration.
+  scp "${SSH_OPTS[@]}" -rq "${SCRIPT_DIR}/lib" "${SSH_USER}@${host}:/tmp/lib"
   run_remote_script "$host" "${SCRIPT_DIR}/node-common.sh"
 done
 

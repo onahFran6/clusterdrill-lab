@@ -76,7 +76,22 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: ShellCheck
-        run: shellcheck bootstrap/*.sh
+        run: shellcheck bootstrap/*.sh bootstrap/lib/*.sh
+
+  # Unit-tests lib/os-family.sh's distro-to-package-manager-family mapping
+  # against synthetic /etc/os-release fixtures - a real, runnable check for
+  # the one part of the RHEL-family bootstrap path that isn't proven by a
+  # real cluster run (see bootstrap/README.md's "Known limitations"). Needs
+  # no VM/container: detect_os_family is a pure function of whatever
+  # os-release file it's pointed at.
+  bootstrap-os-family-detection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Run os-family detection unit tests
+        run: bash bootstrap/check_os_family_detection.sh
 
   # Proves compatibility.json's contract holds for real, without any real
   # cloud spend - a real kubeadm single-node cluster, bootstrapped on this
