@@ -9,6 +9,11 @@ any `providers/<cloud>/` module produces; nothing here is AWS-specific
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for a diagrammed view of
 how this flow fits into the whole system.
 
+This doc covers how to *run* this bootstrap. For a narrative explanation
+of what each script does and why, detailed enough to reproduce the
+cluster by hand without running any of these scripts, see
+[`../BOOTSTRAP-DEEPDIVE.md`](../BOOTSTRAP-DEEPDIVE.md).
+
 ## Flow
 
 1. A `providers/<cloud>/` module provisions the nodes (`terraform apply`).
