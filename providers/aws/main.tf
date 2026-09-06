@@ -7,18 +7,42 @@ locals {
     },
     var.tags,
   )
+
+  ami_by_architecture = {
+    amd64 = data.aws_ami.ubuntu_amd64.id
+    arm64 = data.aws_ami.ubuntu_arm64.id
+  }
 }
 
 # Canonical's own AWS account ID for official Ubuntu AMIs - a stable,
 # publicly documented fact (https://ubuntu.com/server/docs/cloud-images/amazon-ec2),
-# not this project's account.
-data "aws_ami" "ubuntu" {
+# not this project's account. One data source per architecture - control
+# plane and workers each pick theirs via control_plane_architecture/
+# worker_architecture, so a mixed-architecture lab (e.g. an amd64
+# control-plane with Graviton workers) is a supported combination, not
+# just same-architecture-everywhere.
+data "aws_ami" "ubuntu_amd64" {
   most_recent = true
   owners      = ["099720109477"]
 
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+data "aws_ami" "ubuntu_arm64" {
+  most_recent = true
+  owners      = ["099720109477"]
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64-server-*"]
   }
 
   filter {
@@ -148,7 +172,7 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 }
 
 resource "aws_instance" "control_plane" {
-  ami                         = data.aws_ami.ubuntu.id
+  ami                         = local.ami_by_architecture[var.control_plane_architecture]
   instance_type               = var.control_plane_instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.this.id]
@@ -174,7 +198,7 @@ resource "aws_instance" "control_plane" {
 resource "aws_instance" "worker" {
   count = var.worker_count
 
-  ami                         = data.aws_ami.ubuntu.id
+  ami                         = local.ami_by_architecture[var.worker_architecture]
   instance_type               = var.worker_instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.this.id]

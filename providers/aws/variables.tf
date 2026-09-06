@@ -27,10 +27,32 @@ variable "control_plane_instance_type" {
   default     = "t3.medium"
 }
 
+variable "control_plane_architecture" {
+  description = "CPU architecture of control_plane_instance_type - selects which Ubuntu 22.04 AMI to launch it with. Must match the instance type's actual architecture (e.g. \"arm64\" for Graviton families like t4g/m7g/c7g, \"amd64\" for everything else) - Terraform has no way to derive this from the instance type string itself, since AWS's own family-naming convention isn't a machine-checkable contract."
+  type        = string
+  default     = "amd64"
+
+  validation {
+    condition     = contains(["amd64", "arm64"], var.control_plane_architecture)
+    error_message = "control_plane_architecture must be \"amd64\" or \"arm64\"."
+  }
+}
+
 variable "worker_instance_type" {
   description = "EC2 instance type for each worker node."
   type        = string
   default     = "t3.medium"
+}
+
+variable "worker_architecture" {
+  description = "CPU architecture of worker_instance_type - selects which Ubuntu 22.04 AMI to launch every worker with. Every worker shares the same instance_type/architecture; a mixed-architecture worker fleet isn't supported by this module. See control_plane_architecture for the naming caveat - control-plane and workers may use different architectures from each other."
+  type        = string
+  default     = "amd64"
+
+  validation {
+    condition     = contains(["amd64", "arm64"], var.worker_architecture)
+    error_message = "worker_architecture must be \"amd64\" or \"arm64\"."
+  }
 }
 
 variable "ssh_public_key" {

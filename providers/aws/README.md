@@ -189,7 +189,7 @@ up yourself before destroying:
 | Component | Version | Pinned? |
 | --- | --- | --- |
 | OS | Ubuntu 22.04 LTS (Jammy) | Yes - AMI filter in `main.tf` |
-| Architecture | x86_64/amd64 only | Yes - AMI filter is amd64-only; no arm64/Graviton support today |
+| Architecture | amd64 or arm64, per node role | Yes - `control_plane_architecture`/`worker_architecture` each select their own Ubuntu 22.04 AMI; defaults to amd64. A mixed lab (e.g. amd64 control-plane, Graviton workers) is supported - the published `clusterdrill` appliance image is a multi-arch manifest, and `bootstrap/control-plane.sh` already resolves the Cilium CLI's architecture dynamically |
 | Kubernetes (kubelet/kubeadm/kubectl) | 1.33.x | Minor pinned (`KUBERNETES_MINOR` in `node-common.sh`); exact patch is whatever `pkgs.k8s.io`'s `stable:/v1.33` channel resolves to at install time |
 | containerd | Ubuntu 22.04's `containerd` apt package | Not pinned - whatever version Ubuntu's own apt repos serve at install time |
 | Cilium | 1.16.5 | Yes - `CILIUM_VERSION` in `control-plane.sh` |

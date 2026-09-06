@@ -132,7 +132,8 @@ jobs:
       - name: Bootstrap this runner as a single-node cluster
         run: |
           bash bootstrap/node-common.sh
-          bash bootstrap/control-plane.sh 127.0.0.1 /tmp/gh-token "${{ github.repository }}"
+          bash bootstrap/control-plane.sh 127.0.0.1
+          bash bootstrap/deploy-appliance.sh /tmp/gh-token "${{ github.repository }}"
         env:
           # This runner has no separate worker node at all, unlike a real
           # lab (which always provisions >= 1) - without this, the

@@ -97,17 +97,7 @@ for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
 done
 
 echo "run.sh: bootstrapping the control plane"
-REMOTE_TOKEN_FILE=""
-if [ -n "$GITHUB_TOKEN_FILE" ]; then
-  REMOTE_TOKEN_FILE="/tmp/clusterdrill-github-token"
-  scp "${SSH_OPTS[@]}" -q "$GITHUB_TOKEN_FILE" "${SSH_USER}@${CONTROL_PLANE_IP}:${REMOTE_TOKEN_FILE}"
-  # REMOTE_TOKEN_FILE is a fixed literal this script sets above, not user
-  # input - client-side expansion here is intentional, same as
-  # run_remote_script's own remote_name below.
-  # shellcheck disable=SC2029
-  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" "chmod 600 ${REMOTE_TOKEN_FILE}"
-fi
-run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/control-plane.sh" "$CONTROL_PLANE_IP" "$REMOTE_TOKEN_FILE" "$APP_REPO_OVERRIDE"
+run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/control-plane.sh" "$CONTROL_PLANE_IP"
 
 echo "run.sh: fetching the join command"
 scp "${SSH_OPTS[@]}" -q "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/kubeadm-join-command.sh" /tmp/kubeadm-join-command.sh
@@ -118,6 +108,24 @@ for host in "${WORKER_IPS[@]}"; do
   run_remote_script "$host" "${SCRIPT_DIR}/worker.sh"
 done
 rm -f /tmp/kubeadm-join-command.sh
+
+# Deploying the appliance only after every worker has joined, not right
+# after control-plane.sh: its Deployment has no toleration for the
+# control-plane's own NoSchedule taint, so in a real multi-node lab it can
+# only ever schedule once a worker actually exists to run on - deploying
+# it any earlier just hangs until kubectl rollout status's own timeout.
+echo "run.sh: deploying the clusterdrill appliance"
+REMOTE_TOKEN_FILE=""
+if [ -n "$GITHUB_TOKEN_FILE" ]; then
+  REMOTE_TOKEN_FILE="/tmp/clusterdrill-github-token"
+  scp "${SSH_OPTS[@]}" -q "$GITHUB_TOKEN_FILE" "${SSH_USER}@${CONTROL_PLANE_IP}:${REMOTE_TOKEN_FILE}"
+  # REMOTE_TOKEN_FILE is a fixed literal this script sets above, not user
+  # input - client-side expansion here is intentional, same as
+  # run_remote_script's own remote_name below.
+  # shellcheck disable=SC2029
+  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" "chmod 600 ${REMOTE_TOKEN_FILE}"
+fi
+run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-appliance.sh" "$REMOTE_TOKEN_FILE" "$APP_REPO_OVERRIDE"
 
 echo "run.sh: done. SSH to the control plane to use kubectl:"
 echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP}"

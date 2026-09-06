@@ -14,10 +14,18 @@ any `providers/<cloud>/` module produces; nothing here is AWS-specific
    - Runs [`node-common.sh`](node-common.sh) on every node (disables
      swap, installs containerd, kubelet, kubeadm, kubectl).
    - Runs [`control-plane.sh`](control-plane.sh) on the control-plane
-     node (`kubeadm init`, installs Cilium, installs and deploys
-     `clusterdrill`, generates the worker join command).
+     node (`kubeadm init`, installs Cilium, generates the worker join
+     command).
    - Runs [`worker.sh`](worker.sh) on every worker node (`kubeadm join`,
      using the command `control-plane.sh` generated).
+   - Only once every worker has joined, runs
+     [`deploy-appliance.sh`](deploy-appliance.sh) on the control-plane
+     node to install and deploy `clusterdrill` - its Deployment has no
+     toleration for the control-plane's own taint, so it can only
+     schedule once a worker actually exists to run it (this is also why
+     it's a separate script from `control-plane.sh`, not the tail end of
+     it: deploying it any earlier just hangs until `kubectl rollout
+     status`'s own timeout in any real, non-single-node lab).
 
 ```sh
 terraform -chdir=../providers/aws output -json > outputs.json
@@ -27,14 +35,14 @@ terraform -chdir=../providers/aws output -json > outputs.json
 `../compatibility.json` is the machine-readable contract between this lab
 and the `clusterdrill` application release it installs - supported
 Kubernetes range, the exact app version/image digest, the install method,
-required privileges, and the smoke-test command `control-plane.sh` itself
-runs. `check_compatibility_contract.sh` verifies it stays in sync with
-the actual pinned values in `node-common.sh`/`control-plane.sh` - CI runs
-it on every change to any of the three.
+required privileges, and the smoke-test command `deploy-appliance.sh`
+itself runs. `check_compatibility_contract.sh` verifies it stays in sync
+with the actual pinned values in `node-common.sh`/`control-plane.sh` - CI
+runs it on every change to any of the three.
 
 ### Installing while the app repository is still private
 
-No `clusterdrill` package is published to PyPI - `control-plane.sh`
+No `clusterdrill` package is published to PyPI - `deploy-appliance.sh`
 installs a wheel from the app repository's own GitHub Release instead
 (see `compatibility.json`'s `app.install_method`). That works with a
 plain public URL once the app repository is public; until then, pass a
@@ -53,10 +61,10 @@ repository never sees its contents.
 
 ## Known limitations
 
-- **The deployed image may be stale.** `control-plane.sh` resolves the
-  image the same way the Minikube path's `clusterdrill local install`
-  does without `--image`: the release digest paired with the installed
-  package version. Until a release matching current source is
+- **The deployed image may be stale.** `deploy-appliance.sh` resolves
+  the image the same way the Minikube path's `clusterdrill local
+  install` does without `--image`: the release digest paired with the
+  installed package version. Until a release matching current source is
   published, this is a real, honest limitation - see the practice-bank
   README's "Release policy" section for the full explanation of why an
   older published image doesn't reflect current source.
@@ -65,15 +73,23 @@ repository never sees its contents.
   the deliberate scope.
 - **The kubeadm/Cilium/clusterdrill bootstrap flow is verified in CI on a
   real single-node kubeadm cluster** (`.github/workflows/lab-quality-gate.yml`'s
-  `app-lab-compatibility-e2e` job - node-common.sh and control-plane.sh
-  run for real on the CI runner itself, install the exact published
-  release, and the deployed appliance's own smoke test must pass) **- but
-  not yet against a real AWS-provisioned EC2 instance specifically.**
-  `../providers/aws/` validates cleanly (`terraform validate`, a Trivy
-  config scan), but actually applying real AWS infrastructure costs real
-  money and hasn't been done. Treat a first real AWS run as a validation
-  step for the provisioning layer specifically, not an assumed-working
-  deployment; report anything that doesn't match what's documented here.
+  `app-lab-compatibility-e2e` job - node-common.sh, control-plane.sh, and
+  deploy-appliance.sh run for real on the CI runner itself, install the
+  exact published release, and the deployed appliance's own smoke test
+  must pass) **and has been run end to end against a real
+  AWS-provisioned multi-node cluster**, including a mixed
+  amd64-control-plane/arm64-worker lab: `terraform apply` against
+  `../providers/aws/`, both nodes joined, the appliance scheduled onto
+  the (arm64) worker and passed its own health check, and it was reached
+  over its NodePort from outside AWS entirely. That first real run is
+  also what found and fixed several bugs CI's single-node shape can't
+  catch: the ordering issue this file's own "Flow" section above now
+  documents (deploying the appliance before any worker joins would hang
+  until `kubectl rollout status`'s own timeout), the security-group
+  description AWS's API rejects, `run.sh` never exposing
+  `deploy-appliance.sh`'s repo override, and Ubuntu 22.04's apt-shipped
+  pipx predating the `pipx environment` subcommand this script relies
+  on.
 
 ## Security notes
 
@@ -84,13 +100,13 @@ repository never sees its contents.
 - No script here ever reads, logs, or transmits your SSH private key
   contents - `run.sh` only ever passes `-i <path>` to `ssh`/`scp`,
   which read the file locally themselves.
-- `control-plane.sh` generates a random login password for the
+- `deploy-appliance.sh` generates a random login password for the
   appliance and prints it once at the end of the run - it is not
   written to any file this script controls beyond the in-cluster
   Secret `local_install` itself already creates.
 - A GitHub token, when supplied for the still-private-app-repository
   fetch above, is only ever a file path passed between `run.sh` and
-  `control-plane.sh` - never a command-line argument or logged value on
-  either end of the SSH connection - and `control-plane.sh` deletes the
-  remote copy of that file immediately after using it, on every exit
-  path (a `trap`, not just the success path).
+  `deploy-appliance.sh` - never a command-line argument or logged value
+  on either end of the SSH connection - and `deploy-appliance.sh`
+  deletes the remote copy of that file immediately after using it, on
+  every exit path (a `trap`, not just the success path).
