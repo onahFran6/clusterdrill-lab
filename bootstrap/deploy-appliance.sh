@@ -8,6 +8,17 @@
 # see control-plane.sh).
 set -euo pipefail
 
+# See node-common.sh's own identical preamble comment for why this is
+# SCRIPT_DIR-relative rather than a fixed repo-relative path, and run.sh's
+# "scp -r ... /tmp/lib" comment for the other half of this coupling.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bootstrap/lib/os-family.sh
+source "${SCRIPT_DIR}/lib/os-family.sh"
+OS_FAMILY="$(detect_os_family)"
+# shellcheck disable=SC1090 # dynamic path, resolved to one of this
+# directory's own lib/{debian,rhel}.sh at runtime - see os-family.sh.
+source "${SCRIPT_DIR}/lib/${OS_FAMILY}.sh"
+
 if [ $# -gt 2 ]; then
   echo "usage: $0 [github-token-file] [app-repo-override]" >&2
   exit 1
@@ -30,21 +41,13 @@ CLUSTERDRILL_APP_REPO="${2:-onahFran6/clusterdrill}"
 
 echo "control-plane: installing the clusterdrill package (v${CLUSTERDRILL_BOOTSTRAP_VERSION})"
 # The clusterdrill package requires Python >= 3.11 (pyproject.toml's
-# requires-python), but Ubuntu 22.04's own default system python3 is 3.10
-# - installing it explicitly and pointing pipx at it, rather than
-# whatever `python3` resolves to, keeps this working on the documented
-# Ubuntu 22.04 target (see ../compatibility.json's os.release) without
-# depending on the distro's own default ever changing.
-sudo apt-get install -y -qq python3-pip python3.11 python3.11-venv pipx
-pipx ensurepath
-export PATH="$HOME/.local/bin:$PATH"
-# Ubuntu 22.04's apt-shipped pipx is 1.0.0, which predates the `pipx
-# environment` subcommand (added in 1.1.0) this script relies on below to
-# locate pipx's own venv directory without hardcoding a path. Upgrade it
-# via pip - decoupled from the python3.11 pinned above, pipx itself just
-# needs to be new enough, not tied to any particular managed venv's
-# interpreter.
-python3 -m pip install --user --quiet --upgrade pipx
+# requires-python) - os_install_appliance_python_deps handles getting a
+# >= 3.11 interpreter and pipx in place (the exact mechanism is family- and
+# even distro-specific, see lib/debian.sh and lib/rhel.sh) and exports
+# CLUSTERDRILL_PYTHON_BIN, the interpreter name to hand pipx below - never
+# hardcode "python3.11" here, it is not a safe assumption across every
+# supported OS family.
+os_install_appliance_python_deps
 
 # No clusterdrill package is published to PyPI (see the app repository's own
 # README "Release policy" section) - the published GitHub Release's wheel
@@ -84,7 +87,7 @@ else
   exit 1
 fi
 
-pipx install --python python3.11 "$WHEEL_PATH"
+pipx install --python "$CLUSTERDRILL_PYTHON_BIN" "$WHEEL_PATH"
 
 echo "control-plane: deploying the appliance"
 # pipx installs into its own isolated venv, not system python3 - ask pipx
@@ -112,10 +115,11 @@ MANIFEST_PATH="$("$PIPX_PY" -c 'import clusterdrill.cli as m; print(m.MANIFEST)'
 # Same resolution local_install() uses without --image: the release digest
 # paired with the installed package version, or the clusterdrill:dev
 # fallback - which won't exist on this remote node (nothing here builds an
-# image from source). Until a release matching current source is
-# published, this deploys the same known-stale image README.md's "Release
-# policy" section warns about; this is a real, honest limitation of this
-# script today, not a bug in it - see ../README.md's "Known limitations".
+# image from source). The app repository's own release_manifest.json pins
+# v0.1.0 to an image published early in that project's history, before
+# several naming/architecture changes landed - this deploys that same
+# known-stale image, a real, honest limitation of this script, not a bug
+# in it - see ../README.md's "Known limitations".
 IMAGE="$("$PIPX_PY" -c 'from clusterdrill.release import resolve_default_image; print(resolve_default_image())')"
 VERSION="$("$PIPX_PY" -c 'from clusterdrill.release import installed_version; print(installed_version() or "dev")')"
 PASSWORD="$(openssl rand -base64 24 | tr -d '=+/')"
@@ -124,6 +128,16 @@ sed \
   -e "s#\${CLUSTERDRILL_PASSWORD}#${PASSWORD}#g" \
   -e "s#\${CLUSTERDRILL_VERSION}#${VERSION}#g" \
   "$MANIFEST_PATH" | kubectl apply -f -
+
+# The app repository's own manifest deliberately makes this Service
+# ClusterIP - it's written for `clusterdrill local install`'s Minikube
+# workflow, reached via `clusterdrill local url`'s tunnel, and its own
+# comment warns against exposing it over a node network. This lab has no
+# local-tunnel equivalent - the operator is SSH'd into a remote VM with no
+# browser on the other end of that tunnel - so this patches it to NodePort
+# specifically for that remote-VM access model, rather than changing the
+# app's own local-install default.
+kubectl -n clusterdrill-system patch svc clusterdrill -p '{"spec":{"type":"NodePort"}}'
 
 echo "control-plane: waiting for the appliance to become ready"
 kubectl -n clusterdrill-system rollout status deployment/clusterdrill-web --timeout=5m
