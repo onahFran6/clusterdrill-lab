@@ -90,21 +90,31 @@ repository never sees its contents.
 - **Single control-plane, not HA.** This is a disposable practice lab,
   not a production reference architecture - one control-plane node is
   the deliberate scope.
-- **The RHEL-family OS path (`lib/rhel.sh`) is implemented but not yet
-  run as a real cluster.** `providers/aws/` only ever provisions Ubuntu
-  today, so there's no real machine anywhere in this project's CI or
-  manual-testing history that actually exercises it - it's shellchecked
-  and its distro-detection logic (`lib/os-family.sh`'s
-  `detect_os_family`) is unit-tested against synthetic `/etc/os-release`
-  fixtures (`check_os_family_detection.sh`), but the package-install
-  steps themselves (containerd via Docker's repo, kubelet/kubeadm/kubectl
-  via `pkgs.k8s.io`'s rpm channel, EPEL/CRB enablement) have only been
-  reviewed against public docs, not run. Fedora is the least-verified
-  distro within that family bucket - it shares `dnf`/RPM with RHEL/Rocky
-  but not their repo layout (no EPEL/CRB needed, and its default
-  `python3` may already be >= 3.11 depending on release). Same honesty
-  bar as the Debian/Ubuntu path's own real-AWS-run note above, just the
-  other direction: this is a real, reviewable gap, not a hidden one.
+- **The RHEL-family OS path (`lib/rhel.sh`) has been verified once,
+  manually, against a real Rocky Linux 9 target - it is not yet in
+  CI.** `providers/aws/` only ever provisions Ubuntu, so this was a
+  privileged, systemd-enabled Rocky 9 container, not `providers/aws/`
+  itself: `os_install_containerd`, `os_install_kube_packages`, and
+  `os_install_appliance_python_deps` all ran for real, and `kubeadm
+  init` produced a fully healthy control plane (etcd, kube-apiserver,
+  kube-controller-manager, and kube-scheduler all `Running`). That run
+  caught and fixed a real bug: dnf's `exclude=` line blocks the
+  packages it names from a plain `dnf install`, not just a later `dnf
+  upgrade` (unlike `apt-mark hold`) - `os_install_kube_packages` now
+  adds it to the repo file only after the install, not in the same
+  write. Fedora's "default `python3` may already be >= 3.11" branch
+  (see `os_install_appliance_python_deps`) was separately spot-checked
+  on a real Fedora 41 container and confirmed correct. Two failures
+  during that same run were nested-container-testing artifacts, not
+  code bugs, and needed no code change: `swapoff -a` can't disable the
+  *host* Docker Desktop VM's own swap from inside a container, and
+  containerd's overlay snapshotter can't stack on the host's own
+  overlay2 root filesystem ("overlay-on-overlay") - both are non-issues
+  on a real target VM. This still isn't wired into CI (see the
+  `run.sh`/`/tmp/lib` bullet below, and `providers/aws`'s Ubuntu-only
+  scope) - same honesty bar as the Debian/Ubuntu path's own
+  real-AWS-run note above, just for a manual RHEL-family run instead of
+  a CI one.
 - **`run.sh` ships `bootstrap/lib/` to each remote host at a hardcoded
   path (`/tmp/lib`), coupled to `run_remote_script`'s own hardcoded
   flatten target (`/tmp/<script-name>`).** Nothing enforces this

@@ -7,13 +7,11 @@
 # and Docker's own RPM install docs (https://docs.docker.com/engine/install/rhel/) -
 # no text or structure copied from any private or course-provided script.
 #
-# Unlike debian.sh, this path has no real cluster behind it yet - see
-# ../README.md's "Known limitations" for exactly what level of verification
-# it has (shellcheck + the pure detect_os_family unit test, not a real
-# kubeadm run). Fedora is the least-verified member of this family bucket:
-# it shares dnf/RPM with RHEL/Rocky but not their repo layout (no EPEL/CRB
-# needed on Fedora, and Fedora's default python3 may already be >= 3.11
-# depending on release - see os_install_appliance_python_deps below).
+# Unlike debian.sh, this path isn't run in CI - it has been verified once,
+# manually, against a real Rocky Linux 9 target (and the Fedora branch of
+# os_install_appliance_python_deps spot-checked on a real Fedora target too)
+# - see ../README.md's "Known limitations" for the full account of that run,
+# including the one real bug it caught (the exclude= line below).
 
 # /etc/os-release's ID (rhel, rocky, centos, almalinux, fedora, ...) -
 # os-family.sh already collapsed this down to the coarse "rhel" family, but
