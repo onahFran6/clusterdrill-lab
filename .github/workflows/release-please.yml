@@ -1,0 +1,38 @@
+name: release-please
+
+# Maintains a standing "release PR" against clusterdrill-lab that
+# accumulates a CHANGELOG entry and the next semantic version from
+# Conventional Commits merged since the last release, and - once that PR
+# is merged - tags the release and publishes a GitHub Release. See
+# MAINTAINING.md's "Cutting a release" section for the full runbook this
+# fits into (bump a pin -> compatibility.json -> README matrix -> E2E ->
+# merge the release-please PR -> tag exists).
+#
+# This workflow never touches real cloud credentials or infrastructure -
+# it only reads git history and writes to release-please-config.json's
+# own bookkeeping files (CHANGELOG.md, .release-please-manifest.json) and
+# GitHub's Releases/tags API.
+#
+# Third-party Action pinned to a full commit SHA, not a mutable tag,
+# matching lab-quality-gate.yml's convention - the trailing `# vX` comment
+# is only a human-readable label. To bump: `gh api
+# repos/<owner>/<repo>/git/refs/tags/<new-tag> --jq .object.sha` (resolve
+# through .object again if that returns a tag object, not a commit).
+
+on:
+  push:
+    branches: [clusterdrill-lab]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          target-branch: clusterdrill-lab
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

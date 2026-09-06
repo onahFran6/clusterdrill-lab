@@ -41,6 +41,13 @@ a vulnerability in this project).
 
 ## Supported versions
 
-This project does not yet have a stable release line with parallel
-security-patch support - only the latest revision on the default branch
-receives fixes. This section will be updated if that changes.
+`clusterdrill-lab` follows [semantic versioning](https://semver.org/),
+distinct from the `clusterdrill` application's own version - see
+[`MAINTAINING.md`](MAINTAINING.md) for the full policy. Pre-1.0 (the
+current `0.x` line), there is still only one supported line: the latest
+tagged release and the latest revision on the default branch both
+receive fixes, not a matrix of parallel maintained minor versions. If a
+vulnerability affects an older tagged release, the fix lands as a new
+release on the current line rather than a backport to the older tag.
+This will be revisited once there's a 1.0 release and, if demand
+warrants it, more than one maintained line at a time.

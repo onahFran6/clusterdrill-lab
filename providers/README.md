@@ -34,3 +34,13 @@ clean.
   abstraction this project avoids - when it's needed, it's "write
   `providers/gcp/*.tf` producing the same four outputs," not a rewrite
   of anything else in this repository.
+
+## Cross-provider version parity (placeholder)
+
+Whether a future second provider module must track the same Kubernetes
+minor/Cilium/Ubuntu pins as `aws/`'s `compatibility.json` snapshot, or is
+allowed to diverge and publish its own, is not yet decided - low urgency
+since `gcp/` isn't built, but flagged here so the question has a home
+once someone actually builds it, rather than being silently unanswered.
+See [`MAINTAINING.md`](../MAINTAINING.md) for how `aws/`'s own pins are
+versioned today.

@@ -45,6 +45,20 @@ as cloud-specific, ask in the PR rather than guess.
   under a `.terraform/` directory - these hold real (or potentially real)
   account-specific and secret values.
 
+## Commit message convention
+
+Commits merged to `clusterdrill-lab` must use a
+[Conventional Commits](https://www.conventionalcommits.org/) prefix
+(`fix:`, `feat:`, `chore:`, `docs:`, etc.) - this branch's release
+automation ([`release-please`](https://github.com/googleapis/release-please),
+see [`MAINTAINING.md`](MAINTAINING.md)) parses commit history to generate
+the CHANGELOG and decide the next version; a commit it can't parse is
+silently dropped from both. `fix:` and `feat:` are the two that affect
+versioning (patch and minor respectively, pre-1.0 - see
+[`MAINTAINING.md`](MAINTAINING.md)'s versioning policy); the rest
+(`chore:`, `docs:`, `test:`, `ci:`, `refactor:`) are recorded but don't
+bump the version on their own.
+
 ## Security scanning
 
 CI runs a static Terraform misconfiguration scan (Trivy's config scanner)
@@ -72,6 +86,8 @@ issue at all (see [`SECURITY.md`](SECURITY.md)), so there's no public
 - [`GOVERNANCE.md`](GOVERNANCE.md) - how decisions get made.
 - [`SUPPORT.md`](SUPPORT.md) - where to ask a question vs. file an issue.
 - [`SECURITY.md`](SECURITY.md) - how to report a vulnerability privately.
+- [`MAINTAINING.md`](MAINTAINING.md) - versioning policy, the release
+  process, and the full version-bump runbook for pinned dependencies.
 
 ## Code of conduct
 

@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # GitHub Actions used by this branch's own workflows
+  # (lab-quality-gate.yml, release-please.yml). Understands SHA-pinned
+  # `uses:` lines and proposes an update PR with the new SHA and a
+  # human-readable version bump in the PR description, closing the gap
+  # documented in lab-quality-gate.yml's own header comment (previously
+  # only a manual `gh api .../git/refs/tags/<new-tag>` runbook).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # The AWS Terraform root module - tracks the hashicorp/aws provider
+  # constraint (~> 5.0) in providers/aws/versions.tf and proposes a
+  # providers/aws/.terraform.lock.hcl update alongside it. See
+  # MAINTAINING.md's version-bump runbook for the full checklist a
+  # provider bump like this should go through (compatibility.json,
+  # README matrix, E2E rerun, CHANGELOG, release) beyond just accepting
+  # this PR.
+  - package-ecosystem: "terraform"
+    directory: "/providers/aws"
+    schedule:
+      interval: "weekly"
