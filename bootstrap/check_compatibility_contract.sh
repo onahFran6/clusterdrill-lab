@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Verifies ../compatibility.json's pinned versions match the literal pins
-# in node-common.sh and deploy-appliance.sh - the three are hand-maintained
-# together (see compatibility.json's own "$comment") and must never
-# silently drift apart. Run from clusterdrill-lab/bootstrap/ or pass its
-# own directory as $1.
+# in node-common.sh, deploy-appliance.sh, and dashboard/headlamp-manifest.yaml
+# - all hand-maintained together (see compatibility.json's own "$comment")
+# and must never silently drift apart. Run from clusterdrill-lab/bootstrap/
+# or pass its own directory as $1.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +11,7 @@ LAB_DIR="$(dirname "$SCRIPT_DIR")"
 
 CONTRACT_VERSION="$(python3 -c "import json; print(json.load(open('${LAB_DIR}/compatibility.json'))['app']['version'])")"
 CONTRACT_K8S_MINOR="$(python3 -c "import json; print(json.load(open('${LAB_DIR}/compatibility.json'))['kubernetes']['bootstrap_pinned_minor'])")"
+CONTRACT_DASHBOARD_IMAGE="$(python3 -c "import json; print(json.load(open('${LAB_DIR}/compatibility.json'))['dashboard']['image'])")"
 
 FAIL=0
 if ! grep -q "CLUSTERDRILL_BOOTSTRAP_VERSION=\"${CONTRACT_VERSION}\"" "${SCRIPT_DIR}/deploy-appliance.sh"; then
@@ -19,6 +20,10 @@ if ! grep -q "CLUSTERDRILL_BOOTSTRAP_VERSION=\"${CONTRACT_VERSION}\"" "${SCRIPT_
 fi
 if ! grep -q "KUBERNETES_MINOR=\"${CONTRACT_K8S_MINOR}\"" "${SCRIPT_DIR}/node-common.sh"; then
   echo "compatibility.json's kubernetes.bootstrap_pinned_minor (${CONTRACT_K8S_MINOR}) does not match bootstrap/node-common.sh's KUBERNETES_MINOR" >&2
+  FAIL=1
+fi
+if ! grep -qF "image: ${CONTRACT_DASHBOARD_IMAGE}" "${LAB_DIR}/dashboard/headlamp-manifest.yaml"; then
+  echo "compatibility.json's dashboard.image (${CONTRACT_DASHBOARD_IMAGE}) does not match dashboard/headlamp-manifest.yaml's image" >&2
   FAIL=1
 fi
 

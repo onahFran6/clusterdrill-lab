@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: headlamp-system
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headlamp
+  namespace: headlamp-system
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+automountServiceAccountToken: true
+---
+# Read-only, not Headlamp's own Helm chart default (cluster-admin - see
+# kubernetes-sigs/headlamp#4435) and not its stricter built-in "view" role
+# either. Resource list mirrors clusterdrill/manifests/local-appliance.yaml's
+# own ClusterRole exactly (including secrets) - decided deliberately: this
+# lab is single-operator, and whoever runs it already has unrestricted
+# kubectl access over SSH, so excluding Secrets from the dashboard UI would
+# be an artificial gap (CKAD questions routinely involve Secrets) with no
+# real access-boundary benefit here. get/list/watch only - Headlamp doesn't
+# need to create, modify, or exec into anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: headlamp-viewer
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "endpoints", "limitranges", "namespaces", "nodes", "events", "persistentvolumeclaims", "persistentvolumes", "pods", "resourcequotas", "secrets", "serviceaccounts", "services"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs", "jobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterrolebindings", "clusterroles", "rolebindings", "roles"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch"]
+# Same helm-crds CRD groups the appliance's own ClusterRole grants (see that
+# manifest's comment for why this is a resource-kind wildcard scoped to
+# explicitly-named groups, not an apiGroup wildcard) - so a candidate's own
+# CRD instances are visible in the dashboard too, not just their definitions.
+- apiGroups: ["analytics.clusterdrill.io", "bakery.clusterdrill.io", "billing.clusterdrill.io", "catalog.clusterdrill.io", "diner.clusterdrill.io", "finance.clusterdrill.io", "fleet.clusterdrill.io", "gadgets.clusterdrill.io", "infra.clusterdrill.io", "jobs.clusterdrill.io", "limits.clusterdrill.io", "media.clusterdrill.io", "monitoring.clusterdrill.io", "music.clusterdrill.io", "ops.clusterdrill.io", "people.clusterdrill.io", "retail.clusterdrill.io", "snacks.clusterdrill.io", "storage.clusterdrill.io", "storagepolicy.clusterdrill.io", "support.clusterdrill.io"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-viewer
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: headlamp-viewer
+subjects:
+- kind: ServiceAccount
+  name: headlamp
+  namespace: headlamp-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headlamp
+  namespace: headlamp-system
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: headlamp
+      app.kubernetes.io/instance: headlamp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: headlamp
+        app.kubernetes.io/instance: headlamp
+        app.kubernetes.io/part-of: clusterdrill-lab
+        app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+    spec:
+      serviceAccountName: headlamp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: headlamp
+        image: ghcr.io/headlamp-k8s/headlamp:v0.43.0
+        args: ["-in-cluster"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        ports:
+        - name: http
+          containerPort: 4466
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headlamp
+  namespace: headlamp-system
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/part-of: clusterdrill-lab
+    app.kubernetes.io/managed-by: clusterdrill-lab-bootstrap
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/instance: headlamp
+  ports:
+  - name: http
+    port: 4466
+    targetPort: http

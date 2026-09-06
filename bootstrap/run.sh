@@ -127,5 +127,12 @@ if [ -n "$GITHUB_TOKEN_FILE" ]; then
 fi
 run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-appliance.sh" "$REMOTE_TOKEN_FILE" "$APP_REPO_OVERRIDE"
 
+# Same ordering reason as the appliance above - and same reason it needs its
+# own explicit scp: run_remote_script only transfers the one script it's
+# about to invoke, not files that script references.
+echo "run.sh: deploying the Headlamp dashboard"
+scp "${SSH_OPTS[@]}" -q "${SCRIPT_DIR}/../dashboard/headlamp-manifest.yaml" "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/headlamp-manifest.yaml"
+run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-headlamp.sh"
+
 echo "run.sh: done. SSH to the control plane to use kubectl:"
 echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP}"

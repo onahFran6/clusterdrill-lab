@@ -67,6 +67,23 @@ log in with the password `run.sh` printed. The security group's
 `nodeport_range` rule (30000-32767, restricted to your `allowed_ssh_cidr`)
 already permits this from your own IP; nothing further to open.
 
+### Headlamp dashboard
+
+A [Headlamp](https://github.com/kubernetes-sigs/headlamp) dashboard is deployed alongside the
+appliance, in its own `headlamp-system` namespace:
+
+```sh
+kubectl -n headlamp-system get svc headlamp   # find its assigned NodePort
+kubectl create token headlamp -n headlamp-system --duration=8h
+```
+
+Reachable the same way as the appliance, at `http://<control_plane_ip>:<headlamp_nodeport>` -
+same security group rule, nothing further to open. Log in with the token the command above
+prints - Headlamp tokens are short-lived by design, so `deploy-headlamp.sh` never prints one
+itself; generate a fresh one whenever you need it. It has read-only access to the whole
+cluster, including Secrets - see `dashboard/headlamp-manifest.yaml`'s own ClusterRole comment
+for why that's the deliberate choice for this single-operator lab.
+
 To use `kubectl` from your own machine instead of over SSH, copy
 `~/.kube/config` off the control-plane node and edit its `server:` line
 from the node's private IP to `https://<control_plane_ip>:6443` - the

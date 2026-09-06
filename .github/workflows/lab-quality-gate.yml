@@ -134,6 +134,8 @@ jobs:
           bash bootstrap/node-common.sh
           bash bootstrap/control-plane.sh 127.0.0.1
           bash bootstrap/deploy-appliance.sh /tmp/gh-token "${{ github.repository }}"
+          cp dashboard/headlamp-manifest.yaml /tmp/headlamp-manifest.yaml
+          bash bootstrap/deploy-headlamp.sh
         env:
           # This runner has no separate worker node at all, unlike a real
           # lab (which always provisions >= 1) - without this, the
@@ -156,6 +158,20 @@ jobs:
           curl -fsS --retry 5 --retry-delay 3 "http://127.0.0.1:${NODEPORT}/" > /dev/null
           echo "smoke test: appliance responded on NodePort ${NODEPORT}"
 
+      - name: Verify the deployed Headlamp is the exact contracted image
+        run: |
+          RUNNING_IMAGE="$(kubectl -n headlamp-system get deployment headlamp -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          CONTRACT_IMAGE="$(python3 -c "import json; print(json.load(open('compatibility.json'))['dashboard']['image'])")"
+          echo "running:  ${RUNNING_IMAGE}"
+          echo "contract: ${CONTRACT_IMAGE}"
+          test "${RUNNING_IMAGE}" = "${CONTRACT_IMAGE}"
+
+      - name: Smoke test - reach Headlamp through its NodePort
+        run: |
+          NODEPORT="$(kubectl -n headlamp-system get svc headlamp -o jsonpath='{.spec.ports[0].nodePort}')"
+          curl -fsS --retry 5 --retry-delay 3 "http://127.0.0.1:${NODEPORT}/" > /dev/null
+          echo "smoke test: Headlamp responded on NodePort ${NODEPORT}"
+
       # This job can't be dry-run locally (it needs a real kubeadm cluster)
       # - if a step above fails, this is the only way to see why from the
       # workflow log alone.
@@ -174,6 +190,10 @@ jobs:
           kubectl -n clusterdrill-system logs deployment/clusterdrill-web --all-containers --tail=200 || true
           echo "--- clusterdrill-web pod logs (previous container, if it restarted) ---"
           kubectl -n clusterdrill-system logs deployment/clusterdrill-web --all-containers --previous --tail=200 || true
+          echo "--- headlamp pod describe ---"
+          kubectl -n headlamp-system describe pods -l app.kubernetes.io/name=headlamp || true
+          echo "--- headlamp pod logs ---"
+          kubectl -n headlamp-system logs deployment/headlamp --tail=200 || true
           echo "--- disk usage (a disk-pressure taint would also block scheduling) ---"
           df -h || true
           echo "--- cilium status ---"

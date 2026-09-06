@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs. See bootstrap/control-plane.sh (the code that actually reads app.version/app.image_digest) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/control-plane.sh and bootstrap/node-common.sh, together in the same commit whenever any of them change - they must never drift apart.",
+  "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs, and the Headlamp dashboard it also deploys. See bootstrap/control-plane.sh (the code that actually reads app.version/app.image_digest) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/control-plane.sh, bootstrap/node-common.sh, and dashboard/headlamp-manifest.yaml, together in the same commit whenever any of them change - they must never drift apart.",
   "app": {
     "package": "clusterdrill",
     "version": "0.1.0",
@@ -9,6 +9,15 @@
     "install_method": "pip/pipx wheel install from a GitHub Release asset (release_repository, tag v<version>) - not PyPI, which has no clusterdrill package. See bootstrap/control-plane.sh.",
     "required_privileges": "A single namespaced ClusterRole/ClusterRoleBinding pair scoped to the resource kinds the practice-bank question set actually needs (core, apps, batch, autoscaling, networking.k8s.io, policy, rbac.authorization.k8s.io, storage.k8s.io, apiextensions.k8s.io, plus explicitly-named questions/helm-crds CRD groups) - no cluster-admin binding, no wildcard apiGroup. See practice-bank/clusterdrill/manifests/local-appliance.yaml's ClusterRole and practice-bank/README.md's Security limits section.",
     "smoke_test_command": "kubectl -n clusterdrill-system rollout status deployment/clusterdrill-web --timeout=5m"
+  },
+  "dashboard": {
+    "package": "headlamp",
+    "upstream_repository": "kubernetes-sigs/headlamp",
+    "image": "ghcr.io/headlamp-k8s/headlamp:v0.43.0",
+    "install_method": "static manifest (dashboard/headlamp-manifest.yaml), applied by bootstrap/deploy-headlamp.sh - not Headlamp's own Helm chart, which defaults to a cluster-admin ClusterRoleBinding (kubernetes-sigs/headlamp#4435).",
+    "required_privileges": "A single ClusterRole/ClusterRoleBinding pair, read-only (get/list/watch), covering the same resource kinds as the appliance's own ClusterRole including secrets - see dashboard/headlamp-manifest.yaml's own ClusterRole for the deliberate reasoning.",
+    "auth_method": "ServiceAccount bearer token, generated on demand by the operator (kubectl create token headlamp -n headlamp-system) - never printed by deploy-headlamp.sh, since kubectl create token tokens are short-lived by design.",
+    "smoke_test_command": "kubectl -n headlamp-system rollout status deployment/headlamp --timeout=5m"
   },
   "kubernetes": {
     "bootstrap_pinned_minor": "1.33",

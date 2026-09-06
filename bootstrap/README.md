@@ -26,19 +26,26 @@ any `providers/<cloud>/` module produces; nothing here is AWS-specific
      it's a separate script from `control-plane.sh`, not the tail end of
      it: deploying it any earlier just hangs until `kubectl rollout
      status`'s own timeout in any real, non-single-node lab).
+   - Then runs [`deploy-headlamp.sh`](deploy-headlamp.sh) on the
+     control-plane node to install the
+     [Headlamp](https://github.com/kubernetes-sigs/headlamp) dashboard
+     (`../dashboard/headlamp-manifest.yaml`) - same ordering constraint
+     and same reason as the appliance above.
 
 ```sh
 terraform -chdir=../providers/aws output -json > outputs.json
 ./run.sh outputs.json ~/.ssh/id_ed25519
 ```
 
-`../compatibility.json` is the machine-readable contract between this lab
-and the `clusterdrill` application release it installs - supported
-Kubernetes range, the exact app version/image digest, the install method,
-required privileges, and the smoke-test command `deploy-appliance.sh`
-itself runs. `check_compatibility_contract.sh` verifies it stays in sync
-with the actual pinned values in `node-common.sh`/`control-plane.sh` - CI
-runs it on every change to any of the three.
+`../compatibility.json` is the machine-readable contract between this lab,
+the `clusterdrill` application release it installs, and the Headlamp
+dashboard it also deploys - supported Kubernetes range, exact
+versions/image references, install methods, required privileges, and the
+smoke-test commands `deploy-appliance.sh`/`deploy-headlamp.sh` themselves
+run. `check_compatibility_contract.sh` verifies it stays in sync with the
+actual pinned values in `node-common.sh`/`deploy-appliance.sh`/
+`dashboard/headlamp-manifest.yaml` - CI runs it on every change to any of
+them.
 
 ### Installing while the app repository is still private
 
