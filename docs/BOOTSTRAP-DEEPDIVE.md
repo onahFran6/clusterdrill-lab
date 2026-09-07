@@ -102,6 +102,15 @@ Runs once `node-common.sh` has finished on the control-plane node. The first rea
 sudo kubeadm init --pod-network-cidr="$POD_CIDR" --apiserver-cert-extra-sans="$CONTROL_PLANE_IP"
 ```
 
+Like `node-common.sh`, this script is written to be idempotent, for the same reason: `run.sh`
+drives every node over one long SSH-orchestrated sequence, and a later step failing (a dropped
+SSH connection to a different node, a transient network blip - not necessarily anything wrong
+with the control plane itself) shouldn't force starting the whole lab over from a fresh control
+plane. `kubeadm init` refuses to run twice on a node that already has one (it fails preflight
+checks - ports already bound, `/etc/kubernetes/manifests/*.yaml` already present), so
+`control-plane.sh` checks for `/etc/kubernetes/admin.conf` (the file `kubeadm init` writes only on
+success) first and skips straight to kubeconfig setup if it's already there.
+
 **`--pod-network-cidr`** tells kubeadm which CIDR block pod IPs will come from, and it writes that
 choice into cluster config that the CNI plugin reads later. `control-plane.sh` sets `POD_CIDR` to
 `10.244.0.0/16` - a private RFC 1918 range picked specifically because it's the range Cilium's own
@@ -164,6 +173,12 @@ apart. Pinning means every lab provisioned against this codebase gets the same C
 matching whatever version the practice-bank question set was actually written and verified
 against.
 
+Same idempotency concern as `kubeadm init` above applies here: `cilium install` errors out if
+Cilium is already installed on the cluster, so `control-plane.sh` runs a plain `cilium status`
+(a single check, not `--wait`) first and only calls `cilium install` if that check fails - the
+`cilium` CLI binary itself is always re-fetched/re-extracted regardless, since that's just
+overwriting a local file and is cheap either way.
+
 **`cilium status --wait`** is not a fixed sleep or a single readiness check - it polls Cilium's own
 in-cluster status (agent DaemonSet rollout, the operator Deployment, and Cilium's own internal
 health checks) until Cilium reports itself fully operational, or fails outright if it can't reach
@@ -202,6 +217,11 @@ configuration (CA data, cluster DNS, etc.) so it can start reporting node status
 scheduled pods. A worker never runs `kubeadm init` and never runs a control-plane static pod
 (no `kube-apiserver`, `etcd`, `kube-scheduler`, or `kube-controller-manager` on it) - it's a
 Kubernetes worker-only join, not a second control-plane.
+
+`worker.sh` is idempotent the same way `control-plane.sh` is: `kubeadm join` fails preflight on a
+node that already joined (same class of "port already in use" errors), so `worker.sh` checks for
+`/etc/kubernetes/kubelet.conf` (written only once `kubeadm join` actually succeeds) and skips
+straight to done if it's already there.
 
 Once every worker has joined, `run.sh` moves on to the two Deployments that were waiting for this.
 

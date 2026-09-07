@@ -13,6 +13,13 @@
 # can only ever schedule once a worker node actually exists to run on -
 # calling it from here, before any worker has joined, would just hang
 # until kubectl rollout status's own timeout and fail.
+#
+# Idempotent, like node-common.sh: safe to re-run if a partial bootstrap
+# (e.g. a later step in run.sh, over the same SSH session) failed partway
+# through. `kubeadm init` and `cilium install` both refuse to run again
+# once they've already succeeded once on this node - re-running either
+# unconditionally would fail with "port already in use" /
+# "already installed" errors instead of picking up where run.sh left off.
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -25,13 +32,19 @@ POD_CIDR="10.244.0.0/16"
 CILIUM_CLI_VERSION="v0.16.16"
 CILIUM_VERSION="1.16.5"
 
-echo "control-plane: kubeadm init"
-# CONTROL_PLANE_IP is passed in by run.sh (from the provider module's own
-# output), not self-detected via a cloud instance-metadata call - the
-# metadata API's shape differs per cloud (AWS/GCP/Azure each use a
-# different path scheme at 169.254.169.254), so calling it here would
-# make this script cloud-specific. See ../providers/README.md.
-sudo kubeadm init --pod-network-cidr="$POD_CIDR" --apiserver-cert-extra-sans="$CONTROL_PLANE_IP"
+# /etc/kubernetes/admin.conf only exists once `kubeadm init` has actually
+# succeeded on this node - the same signal kubeadm itself relies on.
+if [ -f /etc/kubernetes/admin.conf ]; then
+  echo "control-plane: kubeadm already initialized this node (found /etc/kubernetes/admin.conf) - skipping kubeadm init"
+else
+  echo "control-plane: kubeadm init"
+  # CONTROL_PLANE_IP is passed in by run.sh (from the provider module's own
+  # output), not self-detected via a cloud instance-metadata call - the
+  # metadata API's shape differs per cloud (AWS/GCP/Azure each use a
+  # different path scheme at 169.254.169.254), so calling it here would
+  # make this script cloud-specific. See ../providers/README.md.
+  sudo kubeadm init --pod-network-cidr="$POD_CIDR" --apiserver-cert-extra-sans="$CONTROL_PLANE_IP"
+fi
 
 echo "control-plane: setting up kubeconfig for $(whoami)"
 mkdir -p "$HOME/.kube"
@@ -63,8 +76,16 @@ curl -fsSL --output cilium-linux.tar.gz \
 sudo tar -xzf cilium-linux.tar.gz -C /usr/local/bin cilium
 rm -f cilium-linux.tar.gz
 
-echo "control-plane: installing Cilium (v${CILIUM_VERSION})"
-cilium install --version "$CILIUM_VERSION"
+# `cilium install` errors out if Cilium is already installed on this
+# cluster - checking `cilium status` first (a single check, not --wait)
+# is the same "already done" signal used above for kubeadm init, just
+# via the Cilium CLI's own health check instead of a file on disk.
+if cilium status >/dev/null 2>&1; then
+  echo "control-plane: Cilium is already installed and healthy - skipping cilium install"
+else
+  echo "control-plane: installing Cilium (v${CILIUM_VERSION})"
+  cilium install --version "$CILIUM_VERSION"
+fi
 cilium status --wait
 
 echo "control-plane: generating the worker join command"
