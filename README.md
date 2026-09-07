@@ -69,6 +69,7 @@ variable reference if you want to change any of it.
 
 ```sh
 terraform init
+terraform plan    # review what it's about to create before it creates anything billed
 terraform apply
 
 terraform output -json > ../../bootstrap/outputs.json
