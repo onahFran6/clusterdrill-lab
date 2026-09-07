@@ -53,13 +53,45 @@ fi
 
 SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 
+# Five stages the rest of this script always runs, in order, regardless of
+# worker_count - see docs/BOOTSTRAP-DEEPDIVE.md's "Order of operations".
+# Purely cosmetic bookkeeping (progress banners a human watching this run
+# can actually scan), not control flow.
+STAGE_TOTAL=5
+STAGE_NUM=0
+CURRENT_STAGE=""
+
+stage() {
+  STAGE_NUM=$((STAGE_NUM + 1))
+  CURRENT_STAGE="$1"
+  STAGE_STARTED=$SECONDS
+  echo
+  echo "==> [${STAGE_NUM}/${STAGE_TOTAL}] ${CURRENT_STAGE}"
+}
+
+stage_done() {
+  echo "<== [${STAGE_NUM}/${STAGE_TOTAL}] ${CURRENT_STAGE} - done ($((SECONDS - STAGE_STARTED))s)"
+}
+
+# Fires only on an actual failure (set -e tripping on a non-zero exit
+# somewhere below) - names which of the five stages was in flight, since
+# the raw error above it (an SSH failure, a remote script's own error)
+# doesn't otherwise say where in the run that happened.
+trap '[ -n "$CURRENT_STAGE" ] && echo "run.sh: failed during [${STAGE_NUM}/${STAGE_TOTAL}] ${CURRENT_STAGE} (see the error above)" >&2' ERR
+
 wait_for_ssh() {
   local host="$1"
-  echo "run.sh: waiting for SSH on $host"
+  local waited=0
   for _ in $(seq 1 30); do
     if ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" true 2>/dev/null; then
+      [ "$waited" -eq 1 ] && echo "run.sh: SSH is back up on $host"
       return 0
     fi
+    # Only announce once an attempt has actually failed - the common case
+    # (SSH already answers) would otherwise print "waiting" noise on every
+    # single run_remote_script call for no reason.
+    [ "$waited" -eq 0 ] && echo "run.sh: waiting for SSH on $host"
+    waited=1
     sleep 10
   done
   echo "run.sh: timed out waiting for SSH on $host" >&2
@@ -101,6 +133,7 @@ run_remote_script() {
 
 echo "run.sh: control-plane is ${CONTROL_PLANE_IP}, ${#WORKER_IPS[@]} worker(s): ${WORKER_IPS[*]}"
 
+stage "Preparing nodes (node-common.sh) on the control-plane + ${#WORKER_IPS[@]} worker(s)"
 for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
   wait_for_ssh "$host"
   # node-common.sh and (later, control-plane-only) deploy-appliance.sh
@@ -113,26 +146,30 @@ for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
   scp "${SSH_OPTS[@]}" -rq "${SCRIPT_DIR}/lib" "${SSH_USER}@${host}:/tmp/lib"
   run_remote_script "$host" "${SCRIPT_DIR}/node-common.sh"
 done
+stage_done
 
-echo "run.sh: bootstrapping the control plane"
+stage "Bootstrapping the control plane (kubeadm init, Cilium)"
 run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/control-plane.sh" "$CONTROL_PLANE_IP"
 
 echo "run.sh: fetching the join command"
 scp "${SSH_OPTS[@]}" -q "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/kubeadm-join-command.sh" /tmp/kubeadm-join-command.sh
+stage_done
 
+stage "Joining ${#WORKER_IPS[@]} worker(s) to the cluster"
 for host in "${WORKER_IPS[@]}"; do
   echo "run.sh: joining worker $host"
   scp "${SSH_OPTS[@]}" -q /tmp/kubeadm-join-command.sh "${SSH_USER}@${host}:/tmp/kubeadm-join-command.sh"
   run_remote_script "$host" "${SCRIPT_DIR}/worker.sh"
 done
 rm -f /tmp/kubeadm-join-command.sh
+stage_done
 
 # Deploying the appliance only after every worker has joined, not right
 # after control-plane.sh: its Deployment has no toleration for the
 # control-plane's own NoSchedule taint, so in a real multi-node lab it can
 # only ever schedule once a worker actually exists to run on - deploying
 # it any earlier just hangs until kubectl rollout status's own timeout.
-echo "run.sh: deploying the clusterdrill appliance"
+stage "Deploying the clusterdrill appliance"
 REMOTE_TOKEN_FILE=""
 if [ -n "$GITHUB_TOKEN_FILE" ]; then
   REMOTE_TOKEN_FILE="/tmp/clusterdrill-github-token"
@@ -144,11 +181,12 @@ if [ -n "$GITHUB_TOKEN_FILE" ]; then
   ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" "chmod 600 ${REMOTE_TOKEN_FILE}"
 fi
 run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-appliance.sh" "$REMOTE_TOKEN_FILE" "$APP_REPO_OVERRIDE"
+stage_done
 
 # Same ordering reason as the appliance above - and same reason it needs its
 # own explicit scp: run_remote_script only transfers the one script it's
 # about to invoke, not files that script references.
-echo "run.sh: deploying the Headlamp dashboard"
+stage "Deploying the Headlamp dashboard"
 scp "${SSH_OPTS[@]}" -q "${SCRIPT_DIR}/../dashboard/headlamp-manifest.yaml" "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/headlamp-manifest.yaml"
 run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-headlamp.sh"
 
@@ -157,6 +195,7 @@ run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-headlamp.sh"
 # asking it directly is simpler than parsing a remote script's output.
 HEADLAMP_NODEPORT="$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" \
   "kubectl -n headlamp-system get svc headlamp -o jsonpath='{.spec.ports[0].nodePort}'")"
+stage_done
 
 echo
 echo "run.sh: done."
