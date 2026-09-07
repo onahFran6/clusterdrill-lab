@@ -41,6 +41,21 @@ every doc in this repository, in the order a new developer should go through the
 
 ## Quick start (AWS)
 
+Before any of this, Terraform needs AWS credentials - there's no variable for them anywhere in
+this module's own `.tf` files, since the AWS provider reads the standard AWS credential chain
+directly. Either run `aws configure` once (if you have the AWS CLI installed, this writes
+`~/.aws/credentials`, which Terraform also reads), or export credentials directly in your shell:
+
+```sh
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+# export AWS_SESSION_TOKEN=...   # only if you're using temporary/SSO credentials
+```
+
+Without one of these, `terraform plan`/`apply` fails with `No valid credential sources found`. See
+[Prerequisites](providers/aws/README.md#prerequisites) for the IAM permissions the credentials
+need (VPCs, EC2 instances, security groups, key pairs).
+
 Clone a tagged release rather than `main`, so what you provision matches a known-good, versioned
 snapshot of this repository instead of whatever's newest on the default branch. See
 [Releases](https://github.com/onahFran6/clusterdrill-lab/releases) for the latest tag - substitute
