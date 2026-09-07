@@ -31,8 +31,15 @@ every doc in this repository, in the order a new developer should go through the
 
 ## Quick start (AWS)
 
+Clone a tagged release rather than `main`, so what you provision matches a known-good, versioned
+snapshot of this repository instead of whatever's newest on the default branch. See
+[Releases](https://github.com/onahFran6/clusterdrill-lab/releases) for the latest tag - substitute
+it for `clusterdrill-lab-v0.1.0` below.
+
 ```sh
-cd providers/aws
+git clone --branch clusterdrill-lab-v0.1.0 --depth 1 \
+  https://github.com/onahFran6/clusterdrill-lab.git
+cd clusterdrill-lab/providers/aws
 cp terraform.tfvars.example terraform.tfvars   # fill in your SSH key and IP
 terraform init
 terraform apply
