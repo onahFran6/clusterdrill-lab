@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.0...clusterdrill-lab-v0.1.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **bootstrap:** make bootstrap resumable and catch bad config early ([a5e0650](https://github.com/onahFran6/clusterdrill-lab/commit/a5e0650379ba847a30afff2729ee5693742bf90c))
+
 ## 0.1.0 (2026-09-06)
 
 
