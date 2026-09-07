@@ -19,12 +19,17 @@ cluster by hand without running any of these scripts, see
 1. A `providers/<cloud>/` module provisions the nodes (`terraform apply`).
 2. `run.sh` reads that module's Terraform outputs and, over SSH:
    - Runs [`node-common.sh`](node-common.sh) on every node (disables
-     swap, installs containerd, kubelet, kubeadm, kubectl). The
-     containerd/kube-package install steps dispatch on OS family
+     swap, installs containerd, kubelet, kubeadm, kubectl, plus `helm`
+     and `kustomize` for the operator's own CKAD practice use - see
+     [`lib/practice-tools.sh`](lib/practice-tools.sh)).
+     The containerd/kube-package install steps dispatch on OS family
      ([`lib/os-family.sh`](lib/os-family.sh) detects Debian- vs
      RHEL-family from `/etc/os-release`, then sources
      [`lib/debian.sh`](lib/debian.sh) or [`lib/rhel.sh`](lib/rhel.sh)) -
      see "Known limitations" below for how verified each path is.
+     `helm`/`kustomize` install the same way regardless of OS family
+     (a pinned-version release tarball, checksum-verified), so they
+     aren't part of that per-family dispatch.
    - Runs [`control-plane.sh`](control-plane.sh) on the control-plane
      node (`kubeadm init`, installs Cilium, generates the worker join
      command).
@@ -147,6 +152,14 @@ repository never sees its contents.
   doesn't exist). See the cross-referencing comments at `run.sh`'s
   `scp -r ... /tmp/lib` line and `node-common.sh`/`deploy-appliance.sh`'s
   `source` line.
+- **`lib/practice-tools.sh`'s arm64 install path (`helm`/`kustomize`) is
+  implemented but not exercised by any CI job today.**
+  The real e2e job below runs on an amd64 GitHub-hosted runner only;
+  arm64 is only exercised by whichever architecture an operator
+  actually chooses via `providers/aws/variables.tf`'s
+  `control_plane_architecture`/`worker_architecture` on a real run.
+  Same honesty pattern as the RHEL-family bullet above, for a
+  smaller-blast-radius path.
 - **The kubeadm/Cilium/clusterdrill bootstrap flow is verified in CI on a
   real single-node kubeadm cluster** (`.github/workflows/lab-quality-gate.yml`'s
   `app-lab-compatibility-e2e` job - node-common.sh, control-plane.sh, and
