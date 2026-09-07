@@ -5,15 +5,16 @@ step is shaped the way it is - detailed enough that you could reproduce the same
 control-plane/worker/CNI setup yourself on two fresh Ubuntu VMs, without ever running
 `bootstrap/*.sh`.
 
-It is not the same doc as [`bootstrap/README.md`](bootstrap/README.md). That doc tells you how to
+It is not the same doc as [`bootstrap/README.md`](../bootstrap/README.md). That doc tells you how to
 *run* the automation (`run.sh`, its arguments, its flow). This doc tells you how the automation
 works internally and reasons about each step, so you can understand it or replicate it by hand.
-It also isn't a copy of [`providers/aws/README.md`](providers/aws/README.md)'s compatibility
+It also isn't a copy of [`providers/aws/README.md`](../providers/aws/README.md)'s compatibility
 matrix - version numbers live there and are linked from here, not repeated.
 
 If you want the big-picture system map first (what provisions what, cloud-specific vs.
-cloud-agnostic), see `ARCHITECTURE.md` (published as part of the sibling architecture-overview
-work, issue #170). This doc picks up one level down: the inside of `bootstrap/`.
+cloud-agnostic), see [`ARCHITECTURE.md`](ARCHITECTURE.md) (published as part of the sibling
+architecture-overview work, issue #170). This doc picks up one level down: the inside of
+`bootstrap/`.
 
 ## Order of operations
 
@@ -47,7 +48,7 @@ The containerd and kubelet/kubeadm/kubectl install steps are not: `node-common.s
 `os_install_kube_packages` - a shared function-name contract, one implementation per package-manager
 family, rather than a distro check inline in this script. This walkthrough describes the
 `debian.sh` path (`apt`-based Ubuntu/Debian), the one real cluster this project's own CI actually
-bootstraps end to end - see [`bootstrap/README.md`](bootstrap/README.md)'s "Known limitations" for
+bootstraps end to end - see [`bootstrap/README.md`](../bootstrap/README.md)'s "Known limitations" for
 what level of verification the `rhel.sh` (`dnf`-based RHEL/Rocky/Fedora) path has instead.
 
 **Swap is disabled.** `swapoff -a`, plus commenting out the swap line in `/etc/fstab` so it stays
@@ -71,18 +72,18 @@ minor version, then held.** The repo path itself encodes the minor version:
 constant at the top of `node-common.sh`. Only the **minor** is pinned here - whatever patch
 version that channel happens to serve on the day you install is what you get. That split (minor
 pinned, patch floating) is deliberate and is spelled out in
-[`compatibility.json`](compatibility.json)'s `kubernetes.bootstrap_pinned_patch` field: pinning
+[`compatibility.json`](../compatibility.json)'s `kubernetes.bootstrap_pinned_patch` field: pinning
 the minor keeps every node in a given lab run on API versions this project has actually tested
 against, while letting the patch float picks up routine security fixes automatically without this
 project needing to bump a constant for every patch release. See
-`providers/aws/README.md`'s [compatibility matrix](providers/aws/README.md#compatibility-matrix)
+`providers/aws/README.md`'s [compatibility matrix](../providers/aws/README.md#compatibility-matrix)
 for the exact minor currently pinned - it's linked here rather than repeated so this doc doesn't
 go stale the next time that constant changes.
 
 After install, `apt-mark hold kubelet kubeadm kubectl` freezes those three specific packages
 against a routine `apt upgrade` jumping them to a different (and untested) Kubernetes version,
 while every other package on the node still patches normally. `providers/aws/README.md`'s
-[Patch/upgrade](providers/aws/README.md#patch--upgrade) section covers what to do when you
+[Patch/upgrade](../providers/aws/README.md#patch--upgrade) section covers what to do when you
 actually want to move the pinned minor forward.
 
 The whole script is written to be idempotent - safe to re-run if a partial bootstrap failed
@@ -118,7 +119,7 @@ addresses it can see locally at `init` time - typically the node's private IP an
 service IP - and never the public IP an operator will actually connect to from their own machine
 afterward. Adding the public IP as an extra Subject Alternative Name is what lets you later copy
 `~/.kube/config` off the node, point its `server:` field at the public IP, and have TLS validation
-still succeed. `providers/aws/README.md` documents [exactly that workflow](providers/aws/README.md#headlamp-dashboard)
+still succeed. `providers/aws/README.md` documents [exactly that workflow](../providers/aws/README.md#headlamp-dashboard)
 for reaching the cluster from your own machine instead of over SSH.
 
 **Kubeconfig setup** is the standard kubeadm dance: copy `/etc/kubernetes/admin.conf` (written by
@@ -156,7 +157,7 @@ control-plane is where this CLI needs to run regardless of what architecture the
 being.
 
 **The pinned `CILIUM_VERSION`** (see `providers/aws/README.md`'s
-[compatibility matrix](providers/aws/README.md#compatibility-matrix) for the exact current value)
+[compatibility matrix](../providers/aws/README.md#compatibility-matrix) for the exact current value)
 buys reproducibility: `cilium install` without a version pin installs whatever the CLI's own
 default resolves to at install time, which can silently drift across lab runs weeks or months
 apart. Pinning means every lab provisioned against this codebase gets the same Cilium behavior,
@@ -213,7 +214,7 @@ At a high level: install a Python 3.11 environment via `pipx` (Ubuntu 22.04's de
 3.10, older than the `clusterdrill` package's `requires-python`), fetch the pinned release wheel
 (public release URL first, falling back to the GitHub API with a supplied token while the app
 repository is still private - see `bootstrap/README.md`'s
-["Installing while the app repository is still private"](bootstrap/README.md#installing-while-the-app-repository-is-still-private)
+["Installing while the app repository is still private"](../bootstrap/README.md#installing-while-the-app-repository-is-still-private)
 section for that mechanism), `pipx install` it, then resolve and apply its Kubernetes manifest.
 
 **The pinned artifact.** `compatibility.json`'s `app.version` and `app.image_digest` are the
@@ -271,7 +272,7 @@ The sequence below is the manual equivalent of everything above, for two fresh U
 you provision yourself (one control-plane, one worker), with no `bootstrap/*.sh` involved.
 Exact pinned version numbers (Kubernetes minor, Cilium version, cilium-cli version) are called out
 above by name but not repeated here - pull the current values from
-`providers/aws/README.md`'s [compatibility matrix](providers/aws/README.md#compatibility-matrix)
+`providers/aws/README.md`'s [compatibility matrix](../providers/aws/README.md#compatibility-matrix)
 and substitute them below, so this appendix doesn't go stale independently of that table. For any
 step's full flag reference beyond what's shown here, follow the official docs this project itself
 is written against:
@@ -281,7 +282,7 @@ is written against:
 (for the patch/upgrade path, not initial bootstrap), and
 [Cilium's install docs](https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/) /
 [Cilium's upgrade guide](https://docs.cilium.io/en/stable/operations/upgrade/) - all already linked
-from `providers/aws/README.md`'s [Patch/upgrade](providers/aws/README.md#patch--upgrade) section.
+from `providers/aws/README.md`'s [Patch/upgrade](../providers/aws/README.md#patch--upgrade) section.
 
 ### On both VMs
 

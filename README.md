@@ -16,16 +16,18 @@ clusterdrill-lab/
     gcp/        reserved seam, not built
   bootstrap/    cloud-agnostic: kubeadm, containerd, Cilium, clusterdrill
   dashboard/    Headlamp web dashboard, deployed by bootstrap alongside clusterdrill
+  docs/         whole-system architecture and bootstrap deep-dive docs
   LICENSE       MIT
 ```
 
 See [`providers/README.md`](providers/README.md) for the output contract
 that connects the two, and [`bootstrap/README.md`](bootstrap/README.md)
-for the bootstrap flow itself. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for
+for the bootstrap flow itself. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for
 a diagrammed overview of the whole system before diving into either, and
-[`BOOTSTRAP-DEEPDIVE.md`](BOOTSTRAP-DEEPDIVE.md) for a narrative walkthrough
+[`docs/BOOTSTRAP-DEEPDIVE.md`](docs/BOOTSTRAP-DEEPDIVE.md) for a narrative walkthrough
 of how that bootstrap actually builds the cluster, detailed enough to
-reproduce by hand.
+reproduce by hand. [`docs/README.md`](docs/README.md) is the full reading order for
+every doc in this repository, in the order a new developer should go through them.
 
 ## Quick start (AWS)
 

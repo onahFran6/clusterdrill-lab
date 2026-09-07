@@ -13,7 +13,7 @@ Two layers, with one seam between them:
   VMs into a working Kubernetes cluster with the practice-bank appliance and a dashboard installed,
   using only the four values the Terraform layer produced.
 
-See [`providers/README.md`](providers/README.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md#the-one-hard-rule-bootstrap-stays-cloud-agnostic)
+See [`providers/README.md`](../providers/README.md) and [`CONTRIBUTING.md`](../CONTRIBUTING.md#the-one-hard-rule-bootstrap-stays-cloud-agnostic)
 for why that seam is a hard rule, not just a convention.
 
 ## 1. Top-level flow: from empty AWS account to a reachable appliance
@@ -71,23 +71,23 @@ Reading order:
 1. **`providers/aws/*.tf`** provisions a VPC, subnet, internet gateway, route table, one security
    group, a key pair from your own public key, one control-plane EC2 instance, and one or more
    worker EC2 instances. Nothing here installs Kubernetes - see
-   [`providers/aws/README.md`](providers/aws/README.md).
+   [`providers/aws/README.md`](../providers/aws/README.md).
 2. Terraform's outputs are the **only** channel between the two layers: `control_plane_ip`,
    `worker_ips`, `ssh_user`, `ssh_key_name` - see
-   [`providers/README.md`](providers/README.md#the-common-output-contract). `bootstrap/` has no
+   [`providers/README.md`](../providers/README.md#the-common-output-contract). `bootstrap/` has no
    AWS-specific code anywhere; it only ever reads these four values.
 3. **`bootstrap/run.sh`** reads that JSON and, over SSH, drives every other script in order: first
    `node-common.sh` on every node, then `control-plane.sh` on the control-plane node alone, then
    `worker.sh` on each worker once the join command exists. Only after every worker has joined does
    it run `deploy-appliance.sh` and then `deploy-headlamp.sh` - both Deployments lack a toleration
    for the control-plane's own taint, so deploying either earlier just hangs until `kubectl rollout
-   status` times out. See [`bootstrap/README.md`](bootstrap/README.md#flow) for the full flow this
+   status` times out. See [`bootstrap/README.md`](../bootstrap/README.md#flow) for the full flow this
    diagram mirrors.
 4. The result is a running **`clusterdrill`** appliance (`clusterdrill-system` namespace) and a
    **Headlamp** dashboard (`headlamp-system` namespace), each exposed as a `NodePort` Service. The
    security group's `nodeport_range` rule already permits reaching both from the operator's own
-   CIDR - see [`providers/aws/README.md`](providers/aws/README.md#verifying-the-lab) and its
-   [Headlamp section](providers/aws/README.md#headlamp-dashboard) for the exact commands and
+   CIDR - see [`providers/aws/README.md`](../providers/aws/README.md#verifying-the-lab) and its
+   [Headlamp section](../providers/aws/README.md#headlamp-dashboard) for the exact commands and
    login flow.
 
 ## 2. Component diagram: inside a single node
@@ -166,8 +166,8 @@ Notes:
   neither depends on the other. Headlamp's ClusterRole is deliberately read-only (`get`/`list`/`watch`
   only, including Secrets); the appliance's ClusterRole additionally has the verbs its practice
   questions need to apply and grade candidate-authored resources. See
-  [`dashboard/headlamp-manifest.yaml`](dashboard/headlamp-manifest.yaml) and
-  [`providers/aws/README.md`'s Headlamp section](providers/aws/README.md#headlamp-dashboard).
+  [`dashboard/headlamp-manifest.yaml`](../dashboard/headlamp-manifest.yaml) and
+  [`providers/aws/README.md`'s Headlamp section](../providers/aws/README.md#headlamp-dashboard).
 
 ## 3. What's cloud-specific vs. cloud-agnostic
 
@@ -190,12 +190,12 @@ flowchart LR
 ```
 
 `providers/aws/` is the only implemented provider; `providers/gcp/` is an intentionally empty,
-documented seam (see [`providers/gcp/README.md`](providers/gcp/README.md)) - not diagrammed with
+documented seam (see [`providers/gcp/README.md`](../providers/gcp/README.md)) - not diagrammed with
 any internal resources here because none exist yet. Adding GCP support means writing
 `providers/gcp/*.tf` that produces the same four outputs; nothing under `bootstrap/` would need to
 change. `bootstrap/` itself has no `aws_*`, `gcp_*`, or other cloud-specific code, environment
 variable, or metadata-service call anywhere in it - see
-[`CONTRIBUTING.md`](CONTRIBUTING.md#the-one-hard-rule-bootstrap-stays-cloud-agnostic) for the hard
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#the-one-hard-rule-bootstrap-stays-cloud-agnostic) for the hard
 rule this enforces and how to verify it yourself with `grep`.
 
 ## Out of scope for this doc

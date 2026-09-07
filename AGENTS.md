@@ -4,7 +4,8 @@ A disposable, provider-pluggable Kubernetes lab: Terraform provisions the VMs, a
 bootstrap installs Kubernetes (kubeadm, containerd, Cilium) and the `clusterdrill` practice-bank
 appliance on top. Written clean-room against public documentation - no code, text, or
 account-specific configuration copied from any private or course-provided source. See `README.md`
-for quick start and `ARCHITECTURE.md` / `BOOTSTRAP-DEEPDIVE.md` for the full system design.
+for quick start and `docs/ARCHITECTURE.md` / `docs/BOOTSTRAP-DEEPDIVE.md` for the full system
+design.
 
 This is a public repo (`onahFran6/clusterdrill-lab`), extracted from a private monorepo
 (`kcad-aws-workspace`). Treat it as standalone: don't assume access to that monorepo's docs,
@@ -23,6 +24,11 @@ history, or internal automation (bb-factory, agent-trunk, etc.) - none of that a
 - `dashboard/` - the Headlamp manifest `deploy-headlamp.sh` applies.
 - `compatibility.json` - the machine-readable contract between this lab, the `clusterdrill`
   release it installs, and the Headlamp dashboard version.
+- `docs/` - whole-system documentation that doesn't belong next to any single directory's code:
+  `ARCHITECTURE.md` (system-wide diagrammed overview) and `BOOTSTRAP-DEEPDIVE.md` (narrative,
+  reproduce-by-hand walkthrough of the bootstrap flow). See `docs/README.md` for the full reading
+  order, including the directory-local docs (`bootstrap/README.md`, `providers/README.md`, etc.)
+  that stay next to their code instead of moving here.
 
 ## The one hard rule
 

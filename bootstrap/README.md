@@ -6,13 +6,13 @@ documentation - no code or text from any private or course-provided
 script. Consumes only the [common output contract](../providers/README.md#the-common-output-contract)
 any `providers/<cloud>/` module produces; nothing here is AWS-specific
 (verify with `grep -ri aws .` from this directory - it should be clean).
-See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for a diagrammed view of
+See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for a diagrammed view of
 how this flow fits into the whole system.
 
 This doc covers how to *run* this bootstrap. For a narrative explanation
 of what each script does and why, detailed enough to reproduce the
 cluster by hand without running any of these scripts, see
-[`../BOOTSTRAP-DEEPDIVE.md`](../BOOTSTRAP-DEEPDIVE.md).
+[`../docs/BOOTSTRAP-DEEPDIVE.md`](../docs/BOOTSTRAP-DEEPDIVE.md).
 
 ## Flow
 

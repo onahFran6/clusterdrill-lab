@@ -5,7 +5,7 @@ or more worker nodes, and the VPC/subnet/security-group/key-pair each
 needs to exist and be reachable over SSH. This module's job stops there -
 it does **not** install Kubernetes itself. See [`../../bootstrap/`](../../bootstrap/)
 for the cloud-agnostic step that does, once this module hands it the
-node IPs - or [`../../BOOTSTRAP-DEEPDIVE.md`](../../BOOTSTRAP-DEEPDIVE.md)
+node IPs - or [`../../docs/BOOTSTRAP-DEEPDIVE.md`](../../docs/BOOTSTRAP-DEEPDIVE.md)
 for a narrative walkthrough of how that bootstrap builds the cluster,
 detailed enough to reproduce by hand.
 
