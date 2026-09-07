@@ -94,6 +94,22 @@ pre-provisioned image that already ships this exact keyring) - and that prompt g
 which doesn't exist in a non-interactive SSH/CI invocation. Without the flags, a second run of this
 "safe to re-run" script would simply hang.
 
+**`helm` and `kustomize` are installed last, for the operator's own CKAD practice use, not for
+anything this bootstrap does internally.**
+Both tools are named, curriculum-tested skills under CKAD's "Application Deployment" domain, so
+this project installs them the same way it installs `kubectl` - available on the node before the
+operator ever needs them, rather than left for the operator to install by hand first.
+Unlike containerd/kubelet/kubeadm/kubectl above, this step (`bootstrap/lib/practice-tools.sh`)
+does **not** go through the `debian.sh`/`rhel.sh` per-family dispatch: neither tool has an
+officially-blessed apt/dnf package (Helm's own docs describe its apt/rpm repos as
+community-contributed, not the project's own method), so both install the exact same way
+regardless of distro - a pinned-version release tarball for the node's own architecture (`amd64`
+or `arm64`), verified against its published SHA256 checksum before anything is extracted, then
+installed to `/usr/local/bin`.
+Nothing else in this project uses either tool: Headlamp still deploys via a static manifest rather
+than its own upstream Helm chart, for the RBAC-scoping reason covered in this doc's Headlamp
+section below, and that decision is unrelated to and unchanged by this step.
+
 ## 2. Control-plane init (`control-plane.sh`)
 
 Runs once `node-common.sh` has finished on the control-plane node. The first real step:
@@ -347,6 +363,23 @@ sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 sudo systemctl enable kubelet
+
+# helm and kustomize, for your own CKAD practice use - pinned versions in
+# bootstrap/lib/practice-tools.sh (substitute for <HELM_VERSION>/
+# <KUSTOMIZE_VERSION> below), verified against their published checksums
+# before installing. <ARCH> is amd64 or arm64, matching this VM's own CPU.
+curl -fsSL -o helm.tar.gz "https://get.helm.sh/helm-<HELM_VERSION>-linux-<ARCH>.tar.gz"
+curl -fsSL -o helm.tar.gz.sha256sum "https://get.helm.sh/helm-<HELM_VERSION>-linux-<ARCH>.tar.gz.sha256sum"
+sha256sum -c helm.tar.gz.sha256sum
+tar -xzf helm.tar.gz
+sudo install -m 0755 "linux-<ARCH>/helm" /usr/local/bin/helm
+
+curl -fsSL -o kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F<KUSTOMIZE_VERSION>/kustomize_<KUSTOMIZE_VERSION>_linux_<ARCH>.tar.gz"
+curl -fsSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2F<KUSTOMIZE_VERSION>/checksums.txt" \
+  | grep " kustomize_<KUSTOMIZE_VERSION>_linux_<ARCH>.tar.gz\$" > kustomize.sha256sum
+sha256sum -c kustomize.sha256sum
+tar -xzf kustomize.tar.gz
+sudo install -m 0755 kustomize /usr/local/bin/kustomize
 ```
 
 ### On the control-plane VM only
