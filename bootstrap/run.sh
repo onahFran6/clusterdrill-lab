@@ -70,6 +70,16 @@ run_remote_script() {
   local host="$1"
   local script="$2"
   shift 2
+  # Re-checks SSH even though the per-host loop below already waited for
+  # it once - a later call here (control-plane.sh, deploy-appliance.sh,
+  # deploy-headlamp.sh) can hit a transient SSH blip (observed in
+  # practice: banner-exchange timeout mid-run, on a host that had
+  # answered SSH fine moments earlier, no reboot or code change
+  # involved). wait_for_ssh returns immediately once SSH already
+  # answers, so this is a no-op in the common case and a bounded retry
+  # in the uncommon one, instead of the whole run dying on a blip it
+  # could have waited out.
+  wait_for_ssh "$host"
   local remote_name quoted_args
   remote_name="$(basename "$script")"
   scp "${SSH_OPTS[@]}" -q "$script" "${SSH_USER}@${host}:/tmp/${remote_name}"
@@ -142,5 +152,18 @@ echo "run.sh: deploying the Headlamp dashboard"
 scp "${SSH_OPTS[@]}" -q "${SCRIPT_DIR}/../dashboard/headlamp-manifest.yaml" "${SSH_USER}@${CONTROL_PLANE_IP}:/tmp/headlamp-manifest.yaml"
 run_remote_script "$CONTROL_PLANE_IP" "${SCRIPT_DIR}/deploy-headlamp.sh"
 
-echo "run.sh: done. SSH to the control plane to use kubectl:"
+# Queried fresh rather than scraped from deploy-headlamp.sh's own stdout
+# above - the NodePort is a stable fact the API server already knows, so
+# asking it directly is simpler than parsing a remote script's output.
+HEADLAMP_NODEPORT="$(ssh "${SSH_OPTS[@]}" "${SSH_USER}@${CONTROL_PLANE_IP}" \
+  "kubectl -n headlamp-system get svc headlamp -o jsonpath='{.spec.ports[0].nodePort}'")"
+
+echo
+echo "run.sh: done."
+echo
+echo "SSH to the control plane:"
 echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP}"
+echo
+echo "Headlamp dashboard: http://${CONTROL_PLANE_IP}:${HEADLAMP_NODEPORT}"
+echo "  Log in with a bearer token (short-lived by design - generate one on demand):"
+echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP} kubectl create token headlamp -n headlamp-system --duration=8h"
