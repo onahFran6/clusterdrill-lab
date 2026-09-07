@@ -2,10 +2,20 @@
 
 A disposable, provider-pluggable Kubernetes lab: Terraform provisions
 the VMs, a cloud-agnostic bootstrap installs Kubernetes (kubeadm,
-containerd, and Cilium) and the `clusterdrill` practice-bank appliance
-on top. Written clean-room against public documentation - no code,
-text, or account-specific configuration copied from any private or
-course-provided source.
+containerd, and Cilium) and the [`clusterdrill`](https://github.com/onahFran6/clusterdrill)
+practice-bank appliance on top. Written clean-room against public
+documentation - no code, text, or account-specific configuration
+copied from any private or course-provided source.
+
+## The `clusterdrill` practice bank
+
+This lab exists to run [`clusterdrill`](https://github.com/onahFran6/clusterdrill) - the actual
+CKAD practice bank: the question set, grading CLI, appliance image, and Helm chart. This repository
+only provisions the infrastructure and installs a pinned `clusterdrill` release on top (see
+[`compatibility.json`](compatibility.json) for the exact version) - it holds none of the
+practice-bank's own questions or grading logic. If you're looking for the question set itself, or
+want to run `clusterdrill` locally via Minikube instead of a full cloud lab, that's in the
+`clusterdrill` repository, not here.
 
 ## Structure
 
@@ -90,5 +100,5 @@ account and billing setup in ways that don't generalize.
 ## Licensing
 
 Everything in this repository is MIT-licensed - see [`LICENSE`](LICENSE).
-Unlike the practice-bank repository, there is no GPL-licensed content
-here.
+Unlike the [`clusterdrill`](https://github.com/onahFran6/clusterdrill)
+practice-bank repository, there is no GPL-licensed content here.
