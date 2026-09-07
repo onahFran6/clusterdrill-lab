@@ -16,3 +16,4 @@
 - [ ] New or changed variables have a `description` and, where meaningful, a `validation` block.
 - [ ] `terraform.tfvars.example` (or the relevant provider's example file) is updated if variables changed.
 - [ ] No cloud-specific assumptions were added to `bootstrap/` (it must stay provider-agnostic - see `bootstrap/README.md`).
+- [ ] If this PR changes system-wide behavior, `docs/ARCHITECTURE.md` and/or `docs/BOOTSTRAP-DEEPDIVE.md` are updated to match (or the PR explains why no doc update is needed).

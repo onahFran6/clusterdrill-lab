@@ -47,6 +47,24 @@ itself. If unsure whether something counts as cloud-specific, ask rather than gu
 - Update `terraform.tfvars.example` when variables change.
 - Never commit `terraform.tfvars`, `*.tfstate`, `*.tfplan`, or anything under `.terraform/`.
 
+## Documentation
+
+Docs are not a one-time artifact - keep them in sync with the system they describe.
+
+- If a change alters system-wide behavior (the top-level flow, the seam between `providers/` and
+  `bootstrap/`, a new component, a changed diagram-worthy relationship), update `docs/ARCHITECTURE.md`
+  in the same PR.
+- If a change alters what a bootstrap script does or why (a new step, a changed flag, a different
+  ordering constraint), update `docs/BOOTSTRAP-DEEPDIVE.md` in the same PR.
+- If a change adds a genuinely new area of whole-system knowledge that doesn't fit either existing
+  doc or any directory-local README, add a new file under `docs/` rather than stretching an existing
+  doc to cover an unrelated topic - then link it from `docs/README.md`.
+- Directory-local how-to-run docs (`bootstrap/README.md`, `providers/README.md`,
+  `providers/aws/README.md`) stay next to the code they describe, not in `docs/` - `docs/` is for
+  whole-system explanation, not per-directory usage instructions.
+- A PR that changes behavior without a matching doc update should call that out explicitly (and
+  why it's safe to skip), not leave it unmentioned.
+
 ## Verification before opening a PR
 
 - `terraform fmt -check` and `terraform validate` (from `providers/aws/`, or the relevant root
