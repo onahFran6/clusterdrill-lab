@@ -11,8 +11,7 @@
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": true,
       "include-v-in-tag": true,
-      "tag-separator": "-",
-      "release-as": "0.1.0"
+      "tag-separator": "-"
     }
   }
 }
