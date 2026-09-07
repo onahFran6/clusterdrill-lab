@@ -65,6 +65,10 @@ if [ "${CLUSTERDRILL_LAB_SINGLE_NODE:-}" = "1" ]; then
 fi
 
 echo "control-plane: installing the Cilium CLI"
+# Same uname-m-to-arch mapping bootstrap/lib/practice-tools.sh's
+# _practice_tools_goarch has for Helm/Kustomize - duplicated rather than
+# shared since this script sources no lib/ file today; see that function's
+# own comment.
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64) CILIUM_ARCH="amd64" ;;

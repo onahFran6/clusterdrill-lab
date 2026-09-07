@@ -165,6 +165,17 @@ jobs:
           # default NoSchedule taint has nowhere else for it to go here.
           CLUSTERDRILL_LAB_SINGLE_NODE: "1"
 
+      - name: Verify helm and kustomize are the pinned versions
+        run: |
+          # shellcheck disable=SC1091
+          source bootstrap/lib/practice-tools.sh
+          ACTUAL_HELM="$(helm version --template '{{.Version}}')"
+          ACTUAL_KUSTOMIZE="$(kustomize version)"
+          echo "helm:      running=${ACTUAL_HELM} pinned=${HELM_VERSION}"
+          echo "kustomize: running=${ACTUAL_KUSTOMIZE} pinned=${KUSTOMIZE_VERSION}"
+          test "${ACTUAL_HELM}" = "${HELM_VERSION}"
+          test "${ACTUAL_KUSTOMIZE}" = "${KUSTOMIZE_VERSION}"
+
       - name: Verify the deployed appliance is the exact contracted digest
         run: |
           kubectl config set-context --current --namespace=clusterdrill-system
