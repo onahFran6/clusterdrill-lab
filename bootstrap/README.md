@@ -49,6 +49,28 @@ terraform -chdir=../providers/aws output -json > outputs.json
 ./run.sh outputs.json ~/.ssh/id_ed25519
 ```
 
+### What `run.sh` prints when it finishes
+
+A successful run's last lines are everything you need to actually use the lab - no need to go
+hunting for IPs or NodePorts yourself:
+
+```
+SSH to the control plane:
+  ssh -i <ssh-key> <ssh-user>@<control-plane-ip>
+
+Headlamp dashboard: http://<control-plane-ip>:<nodeport>
+  Log in with a bearer token (short-lived by design - generate one on demand):
+  ssh -i <ssh-key> <ssh-user>@<control-plane-ip> kubectl create token headlamp -n headlamp-system --duration=8h
+```
+
+The Headlamp NodePort is queried fresh from the cluster right after `deploy-headlamp.sh` runs -
+see `run.sh`'s own comment at that line for why (a stable fact the API server already knows, not
+something worth scraping out of a remote script's stdout). The `clusterdrill` appliance itself
+has no equivalent line here yet - `run.sh` doesn't print its NodePort today, only its login
+password (from `deploy-appliance.sh`'s own output, earlier in the same run) - see
+`providers/aws/README.md`'s ["Verifying the lab"](../providers/aws/README.md#verifying-the-lab)
+section for how to find and reach it in the meantime.
+
 `../compatibility.json` is the machine-readable contract between this lab,
 the `clusterdrill` application release it installs, and the Headlamp
 dashboard it also deploys - supported Kubernetes range, exact

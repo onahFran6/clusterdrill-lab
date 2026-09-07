@@ -14,7 +14,9 @@ detailed enough to reproduce by hand.
 This provisions real, billed AWS resources (EC2 instances, EBS volumes,
 a VPC and its networking). Nothing here is free-tier-guaranteed. You are
 responsible for your own AWS costs, including destroying the lab when
-you're done - see [Destroying the lab](#destroying-the-lab) below.
+you're done - see [Destroying the lab](#destroying-the-lab) below. There
+is no cheaper "pause it overnight" option - see
+[Pausing instead of destroying](#pausing-instead-of-destroying) for why.
 `clusterdrill-lab` ships no automated cost control - see the root
 [`README.md`](../../README.md)'s cost section for why.
 
@@ -80,6 +82,11 @@ you'll need it for the appliance's web UI.
 
 ## Verifying the lab
 
+`run.sh` itself already prints the SSH command and the Headlamp dashboard's URL at the end of a
+successful run - see `bootstrap/README.md`'s ["What `run.sh` prints when it finishes"](../../bootstrap/README.md#what-runsh-prints-when-it-finishes).
+The steps below are for manually verifying the lab, or for the `clusterdrill` appliance
+specifically, which isn't included in that summary yet (see the same section for why).
+
 From your own machine:
 
 ```sh
@@ -131,6 +138,21 @@ removes every resource this module created (instances, EBS volumes,
 security group, key pair, VPC and its networking) and nothing else in
 your AWS account.
 
+### Pausing instead of destroying
+
+There's no supported "pause for the night, resume tomorrow" option here - only destroy and
+recreate. This module doesn't allocate an Elastic IP; each node's public IP
+(`associate_public_ip_address = true`) is only guaranteed stable while the instance keeps
+running. `aws ec2 stop-instances` looks like a cheaper pause (no EC2 compute charges while
+stopped, only EBS storage), but stopping and starting reassigns a **new** public IP on start -
+and `control-plane.sh` baked the *old* one into the API server's certificate
+(`--apiserver-cert-extra-sans`) at `kubeadm init` time. After a stop/start, SSH still works fine
+(a new IP, but still reachable), but `kubectl` from your own machine against the public IP fails
+TLS validation, and `outputs.json`/anything else that cached the old IP is stale. Recovering from
+that (re-issuing the cert, or just re-copying `~/.kube/config` and using the node's private IP
+instead) is more effort than `terraform destroy` + a fresh `terraform apply` costs in practice,
+for a lab meant to be disposable anyway - so this module doesn't try to support it.
+
 ## Recovery
 
 **A node stops responding (SSH times out, `kubectl` hangs).** Check the
@@ -141,15 +163,19 @@ Reboot it (`aws ec2 reboot-instances --instance-ids <id>`, or the console)
 before reaching for anything more drastic. If reboot doesn't recover it,
 treat the node as lost - see "Replacing a single node" below.
 
-**`kubeadm init`/`kubeadm join` failed partway through bootstrap.**
-`node-common.sh` is written to be idempotent (safe to re-run), but
-`kubeadm init`/`kubeadm join` themselves are not - a second `kubeadm init`
-on an already-initialized node fails loudly rather than silently
-re-running. Recovery is `sudo kubeadm reset -f` on the affected node,
-then re-run the relevant `bootstrap/*.sh` step (`control-plane.sh` or
-`worker.sh`) against it. `run.sh` runs each step over SSH, so you can
-target a single node manually if you don't want to re-run the whole
-fleet.
+**Bootstrap failed partway through, for a reason unrelated to kubeadm itself** (a dropped SSH
+session, a later step failing, `terraform apply` needing a second run first). `node-common.sh`,
+`control-plane.sh`, and `worker.sh` are all written to be idempotent - each checks whether it
+already succeeded (`/etc/kubernetes/admin.conf` on the control plane, `/etc/kubernetes/kubelet.conf`
+on a worker) and skips straight past `kubeadm init`/`kubeadm join` if so. Simply re-running
+`run.sh` (or the individual script against a single node, over SSH) resumes from wherever it
+stopped, rather than failing on a "already initialized" error.
+
+**`kubeadm init`/`kubeadm join` itself failed or left a node's kubeadm state genuinely broken**
+(not just "already succeeded," but a real partial/corrupt init) - the idempotency check above
+won't skip past a broken state cleanly, since it only checks for success, not health. Recovery is
+`sudo kubeadm reset -f` on the affected node, then re-run the relevant `bootstrap/*.sh` step
+(`control-plane.sh` or `worker.sh`) against it.
 
 **Replacing a single node** (one worker died, the rest of the cluster is
 fine): `terraform apply` after changing nothing will not recreate a node
