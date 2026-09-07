@@ -68,6 +68,24 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+# AWS's own record of which architectures each instance type actually
+# supports - the source of truth control_plane_architecture/
+# worker_architecture get cross-checked against below, rather than
+# guessing from instance-type family-name prefixes (t4g/m7g/c7g/... is
+# not an exhaustive or future-proof list of Graviton families). Lets a
+# mismatch (e.g. control_plane_architecture = "arm64" paired with an
+# amd64-only control_plane_instance_type) fail at `terraform plan`, with
+# a clear message, instead of surfacing as an AWS RunInstances error
+# partway through `terraform apply` - which can leave one node created
+# and its sibling not, as happened during this module's own testing.
+data "aws_ec2_instance_type" "control_plane" {
+  instance_type = var.control_plane_instance_type
+}
+
+data "aws_ec2_instance_type" "worker" {
+  instance_type = var.worker_instance_type
+}
+
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
@@ -206,6 +224,16 @@ resource "aws_instance" "control_plane" {
     Name = "${var.cluster_name}-control-plane"
     Role = "control-plane"
   })
+
+  lifecycle {
+    precondition {
+      condition = contains(
+        data.aws_ec2_instance_type.control_plane.supported_architectures,
+        var.control_plane_architecture == "arm64" ? "arm64" : "x86_64"
+      )
+      error_message = "control_plane_instance_type \"${var.control_plane_instance_type}\" does not support the \"${var.control_plane_architecture}\" architecture set in control_plane_architecture (it supports: ${join(", ", data.aws_ec2_instance_type.control_plane.supported_architectures)}). Set control_plane_architecture to match the instance type, or change control_plane_instance_type."
+    }
+  }
 }
 
 resource "aws_instance" "worker" {
@@ -232,4 +260,14 @@ resource "aws_instance" "worker" {
     Name = "${var.cluster_name}-worker-${count.index}"
     Role = "worker"
   })
+
+  lifecycle {
+    precondition {
+      condition = contains(
+        data.aws_ec2_instance_type.worker.supported_architectures,
+        var.worker_architecture == "arm64" ? "arm64" : "x86_64"
+      )
+      error_message = "worker_instance_type \"${var.worker_instance_type}\" does not support the \"${var.worker_architecture}\" architecture set in worker_architecture (it supports: ${join(", ", data.aws_ec2_instance_type.worker.supported_architectures)}). Set worker_architecture to match the instance type, or change worker_instance_type."
+    }
+  }
 }
