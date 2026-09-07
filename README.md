@@ -50,13 +50,30 @@ it for `clusterdrill-lab-v0.1.0` below.
 git clone --branch clusterdrill-lab-v0.1.0 --depth 1 \
   https://github.com/onahFran6/clusterdrill-lab.git
 cd clusterdrill-lab/providers/aws
-cp terraform.tfvars.example terraform.tfvars   # fill in your SSH key and IP
+cp terraform.tfvars.example terraform.tfvars
+```
+
+`terraform.tfvars` has working defaults for everything except two values, which have none on
+purpose - Terraform will refuse to `apply` until you set them:
+
+- **`ssh_public_key`** - your own SSH *public* key (never your private key). Don't have one yet?
+  `ssh-keygen -t ed25519 -C "you@example.com"` (accept the default path), then get its contents
+  with `cat ~/.ssh/id_ed25519.pub` and paste the whole line in.
+- **`allowed_ssh_cidr`** - the CIDR allowed to reach the lab over SSH, the Kubernetes API, and
+  NodePorts. For just your own current IP: `curl -s https://checkip.amazonaws.com`, then append
+  `/32` (e.g. `203.0.113.4/32`). It can't be `0.0.0.0/0` - the variable's validation rejects that.
+
+Everything else (region, instance size, architecture, and more) has a tested default - see
+[`providers/aws/README.md`](providers/aws/README.md#configuration-reference) for the full
+variable reference if you want to change any of it.
+
+```sh
 terraform init
 terraform apply
 
 terraform output -json > ../../bootstrap/outputs.json
 cd ../../bootstrap
-./run.sh outputs.json ~/.ssh/id_ed25519
+./run.sh outputs.json ~/.ssh/id_ed25519   # the private key paired with ssh_public_key above
 ```
 
 See [`providers/aws/README.md`](providers/aws/README.md) for
