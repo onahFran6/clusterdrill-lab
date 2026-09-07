@@ -1,21 +1,50 @@
 # ClusterDrill Lab
 
-A disposable, provider-pluggable Kubernetes lab: Terraform provisions
-the VMs, a cloud-agnostic bootstrap installs Kubernetes (kubeadm,
-containerd, and Cilium) and the [`clusterdrill`](https://github.com/onahFran6/clusterdrill)
-practice-bank appliance on top. Written clean-room against public
-documentation - no code, text, or account-specific configuration
-copied from any private or course-provided source.
+[![Lab quality gate](https://github.com/onahFran6/clusterdrill-lab/actions/workflows/lab-quality-gate.yml/badge.svg)](https://github.com/onahFran6/clusterdrill-lab/actions/workflows/lab-quality-gate.yml)
+[![Latest release](https://img.shields.io/github/v/release/onahFran6/clusterdrill-lab)](https://github.com/onahFran6/clusterdrill-lab/releases)
+[![License: MIT](https://img.shields.io/github/license/onahFran6/clusterdrill-lab)](LICENSE)
+
+A disposable, provider-pluggable Kubernetes lab that provisions a cluster and installs a released
+[`clusterdrill`](https://github.com/onahFran6/clusterdrill) appliance.
+
+## Contents
+
+- [Overview](#overview)
+- [Supported providers](#supported-providers)
+- [The `clusterdrill` practice bank](#the-clusterdrill-practice-bank)
+- [Structure](#structure)
+- [Quick start](#quick-start)
+- [Dashboard](#dashboard)
+- [Operating this lab](#operating-this-lab)
+- [Roadmap and non-goals](#roadmap-and-non-goals)
+- [More documentation](#more-documentation)
+- [Licensing](#licensing)
+
+## Overview
+
+Terraform provisions the VMs. A cloud-agnostic bootstrap then installs Kubernetes (kubeadm,
+containerd, Cilium) and the `clusterdrill` CKAD practice-bank appliance on top. Every root module
+under `providers/` hands the bootstrap the same four values, so swapping clouds never touches
+`bootstrap/`'s own code. Written clean-room against public documentation only - no code or text
+from any private or course-provided source.
+
+## Supported providers
+
+| Provider | Status | Docs |
+| --- | --- | --- |
+| AWS | Built and tested | [`providers/aws/README.md`](providers/aws/README.md) |
+| GCP | Not built - a reserved seam | [`providers/gcp/README.md`](providers/gcp/README.md) |
+
+The Quick start below is AWS-only for that reason: it's the only provider with a working Terraform
+root module today.
 
 ## The `clusterdrill` practice bank
 
-This lab exists to run [`clusterdrill`](https://github.com/onahFran6/clusterdrill) - the actual
-CKAD practice bank: the question set, grading CLI, appliance image, and Helm chart. This repository
-only provisions the infrastructure and installs a pinned `clusterdrill` release on top (see
-[`compatibility.json`](compatibility.json) for the exact version) - it holds none of the
-practice-bank's own questions or grading logic. If you're looking for the question set itself, or
-want to run `clusterdrill` locally via Minikube instead of a full cloud lab, that's in the
-`clusterdrill` repository, not here.
+This lab exists to run [`clusterdrill`](https://github.com/onahFran6/clusterdrill): the CKAD
+question set, grading CLI, appliance image, and Helm chart. This repository only provisions the
+infrastructure and installs a pinned release on top (see [`compatibility.json`](compatibility.json)
+for the exact version). The question set and grading logic live in the `clusterdrill` repository
+itself, along with a Minikube-based local-install path for running it without a cloud lab at all.
 
 ## Structure
 
@@ -30,36 +59,22 @@ clusterdrill-lab/
   LICENSE       MIT
 ```
 
-See [`providers/README.md`](providers/README.md) for the output contract
-that connects the two, and [`bootstrap/README.md`](bootstrap/README.md)
-for the bootstrap flow itself. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for
-a diagrammed overview of the whole system before diving into either, and
-[`docs/BOOTSTRAP-DEEPDIVE.md`](docs/BOOTSTRAP-DEEPDIVE.md) for a narrative walkthrough
-of how that bootstrap actually builds the cluster, detailed enough to
-reproduce by hand. [`docs/README.md`](docs/README.md) is the full reading order for
-every doc in this repository, in the order a new developer should go through them.
+[`providers/README.md`](providers/README.md) documents the output contract between the two
+layers, and [`docs/README.md`](docs/README.md) is the full reading order for every doc in this
+repository.
 
-## Quick start (AWS)
+## Quick start
 
-Before any of this, Terraform needs AWS credentials - there's no variable for them anywhere in
-this module's own `.tf` files, since the AWS provider reads the standard AWS credential chain
-directly. Either run `aws configure` once (if you have the AWS CLI installed, this writes
-`~/.aws/credentials`, which Terraform also reads), or export credentials directly in your shell:
+**Prerequisites** - full detail in [`providers/aws/README.md#prerequisites`](providers/aws/README.md#prerequisites):
 
-```sh
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-# export AWS_SESSION_TOKEN=...   # only if you're using temporary/SSO credentials
-```
+- AWS credentials Terraform can use: `aws configure`, or export `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` (add `AWS_SESSION_TOKEN` for temporary/SSO credentials). Without one of
+  these, `terraform plan` fails with `No valid credential sources found`.
+- An SSH key pair. Don't have one? `ssh-keygen -t ed25519 -C "you@example.com"`.
+- Terraform >= 1.5.0.
 
-Without one of these, `terraform plan`/`apply` fails with `No valid credential sources found`. See
-[Prerequisites](providers/aws/README.md#prerequisites) for the IAM permissions the credentials
-need (VPCs, EC2 instances, security groups, key pairs).
-
-Clone a tagged release rather than `main`, so what you provision matches a known-good, versioned
-snapshot of this repository instead of whatever's newest on the default branch. See
-[Releases](https://github.com/onahFran6/clusterdrill-lab/releases) for the latest tag - substitute
-it for `clusterdrill-lab-v0.1.0` below.
+Clone a tagged release, not `main` - see [Releases](https://github.com/onahFran6/clusterdrill-lab/releases)
+for the latest tag:
 
 ```sh
 git clone --branch clusterdrill-lab-v0.1.0 --depth 1 \
@@ -68,70 +83,82 @@ cd clusterdrill-lab/providers/aws
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-`terraform.tfvars` has working defaults for everything except two values, which have none on
-purpose - Terraform will refuse to `apply` until you set them:
+Set the two variables `terraform.tfvars` has no default for:
 
-- **`ssh_public_key`** - your own SSH *public* key (never your private key). Don't have one yet?
-  `ssh-keygen -t ed25519 -C "you@example.com"` (accept the default path), then get its contents
-  with `cat ~/.ssh/id_ed25519.pub` and paste the whole line in.
-- **`allowed_ssh_cidr`** - the CIDR allowed to reach the lab over SSH, the Kubernetes API, and
-  NodePorts. For just your own current IP: `curl -s https://checkip.amazonaws.com`, then append
-  `/32` (e.g. `203.0.113.4/32`). It can't be `0.0.0.0/0` - the variable's validation rejects that.
+| Variable | How to get it |
+| --- | --- |
+| `ssh_public_key` | `cat ~/.ssh/id_ed25519.pub` |
+| `allowed_ssh_cidr` | `curl -s https://checkip.amazonaws.com`, then append `/32`. Can't be `0.0.0.0/0`. |
 
-Everything else (region, instance size, architecture, and more) has a tested default - see
-[`providers/aws/README.md`](providers/aws/README.md#configuration-reference) for the full
-variable reference if you want to change any of it.
+Everything else already has a tested default - see the
+[configuration reference](providers/aws/README.md#configuration-reference) to change region,
+instance size, or architecture.
 
 ```sh
 terraform init
-terraform plan    # review what it's about to create before it creates anything billed
+terraform plan     # review what it's about to create before anything is billed
 terraform apply
 
 terraform output -json > ../../bootstrap/outputs.json
 cd ../../bootstrap
-./run.sh outputs.json ~/.ssh/id_ed25519   # the private key paired with ssh_public_key above
+./run.sh outputs.json ~/.ssh/id_ed25519   # private key paired with ssh_public_key above
 ```
 
-See [`providers/aws/README.md`](providers/aws/README.md) for
-prerequisites, cost information, and the full lifecycle runbook (destroy,
-recovery, state loss, patch/upgrade, backup, and a compatibility matrix).
+`run.sh` prints a login password near the end - see
+[Verifying the lab](providers/aws/README.md#verifying-the-lab) for the appliance URL and next
+steps.
 
 ## Dashboard
 
-Every lab comes with a [Headlamp](https://github.com/kubernetes-sigs/headlamp)
-web dashboard into the cluster, deployed automatically as part of the
-standard bootstrap - not a separate step. It's RBAC-aware and read-only
-(including Secrets, since this is a single-operator lab where the
-operator already has unrestricted `kubectl` access over SSH). See
-[`bootstrap/README.md`](bootstrap/README.md#flow) for how it fits into
-the bootstrap flow, and
-[`providers/aws/README.md`](providers/aws/README.md#headlamp-dashboard)
+Every lab includes a [Headlamp](https://github.com/kubernetes-sigs/headlamp) web dashboard,
+deployed automatically as part of the standard bootstrap. It's RBAC-aware and read-only, including
+Secrets - reasonable for this single-operator lab, since the operator already has unrestricted
+`kubectl` access over SSH. See [`providers/aws/README.md#headlamp-dashboard`](providers/aws/README.md#headlamp-dashboard)
 for how to reach it and log in.
 
-## Lifecycle and ownership
+## Operating this lab
 
-This is a disposable practice lab, not a production reference
-architecture or a persistent environment - provision it, use it, destroy
-it. You own the cloud account, credentials, SSH key pair, and Terraform
-state; this project holds none of these on your behalf. See
-[`providers/aws/README.md`](providers/aws/README.md#recovery) for what to
-do if a node stops responding, state is lost, or you need to
-patch/upgrade a running lab, and its
-["Not for production use"](providers/aws/README.md#not-for-production-use)
-section for the full disclaimer.
+You own the cloud account, credentials, SSH key pair, and Terraform state. This project holds none
+of these on your behalf and generates no credentials for you.
 
-## Cost
+### Cost
 
-This provisions real, billed cloud resources. You are responsible for
-your own cloud costs, including destroying the lab when you're done.
-This project ships no automated cost control, budget alert, or
-auto-shutdown - see [`providers/aws/README.md`](providers/aws/README.md#cost).
-Building that kind of automation as a portable public product feature is
-a deliberate non-goal: an operator's cost tooling is tied to their own
-account and billing setup in ways that don't generalize.
+This provisions real, billed cloud resources with no automated cost control, budget alert, or
+auto-shutdown. Destroy the lab when you're done - see [`providers/aws/README.md#cost`](providers/aws/README.md#cost).
+
+### Lifecycle
+
+Provision it, use it, destroy it - this is a disposable practice lab, not a persistent environment.
+See [`providers/aws/README.md#recovery`](providers/aws/README.md#recovery) for node failures and
+state loss, and [Not for production use](providers/aws/README.md#not-for-production-use) for the
+full disclaimer.
+
+## Roadmap and non-goals
+
+- **GCP support** - a reserved seam, not yet built; see [`providers/gcp/README.md`](providers/gcp/README.md)
+  for exactly what a future root module would need to produce.
+- **Cost automation** (budget alerts, auto-shutdown) - an operator's cost tooling is tied to their
+  own account and billing setup in ways that don't generalize as a portable feature.
+- **High availability** - a single control-plane node is the intended scope for a disposable
+  practice lab, not a gap to fill.
+- **Backup/snapshot automation** - re-provisioning from scratch is the intended recovery path; see
+  [`providers/aws/README.md#backup`](providers/aws/README.md#backup).
+
+## More documentation
+
+| Doc | Covers |
+| --- | --- |
+| [`docs/README.md`](docs/README.md) | Full reading order for every doc in this repository |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Diagrammed, whole-system overview |
+| [`docs/BOOTSTRAP-DEEPDIVE.md`](docs/BOOTSTRAP-DEEPDIVE.md) | How and why the bootstrap builds the cluster, detailed enough to reproduce by hand |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Terraform/bootstrap conventions and local verification before a PR |
+| [`MAINTAINING.md`](MAINTAINING.md) | Versioning policy and the release-please runbook |
+| [`GOVERNANCE.md`](GOVERNANCE.md) | How decisions get made |
+| [`SUPPORT.md`](SUPPORT.md) | Where to ask a question vs. file a bug |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability privately |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Contributor Covenant |
 
 ## Licensing
 
-Everything in this repository is MIT-licensed - see [`LICENSE`](LICENSE).
-Unlike the [`clusterdrill`](https://github.com/onahFran6/clusterdrill)
-practice-bank repository, there is no GPL-licensed content here.
+MIT - see [`LICENSE`](LICENSE). The [`clusterdrill`](https://github.com/onahFran6/clusterdrill)
+practice-bank repository includes GPL-licensed content; this repository does not.
