@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Debian-family (Ubuntu, Debian) implementation of the os_install_* function
-# contract - sourced by node-common.sh/deploy-appliance.sh after
-# detect_os_family (see os-family.sh) resolves to "debian". This is the one
-# family this repo's own CI actually runs as a real cluster
-# (app-lab-compatibility-e2e in ../../.github/workflows/lab-quality-gate.yml)
-# - keep this behavior-identical to what it replaces; any deviation here is a
-# regression, not a stylistic choice.
+# contract - sourced by node-common.sh after detect_os_family (see
+# os-family.sh) resolves to "debian". This is the one family this repo's own
+# CI actually runs as a real cluster (app-lab-compatibility-e2e in
+# ../../.github/workflows/lab-quality-gate.yml) - keep this behavior-identical
+# to what it replaces; any deviation here is a regression, not a stylistic
+# choice.
 
 os_install_containerd() {
   echo "node-common: installing containerd"
@@ -40,25 +40,4 @@ os_install_kube_packages() {
   sudo apt-mark hold kubelet kubeadm kubectl >/dev/null
 
   sudo systemctl enable kubelet >/dev/null
-}
-
-os_install_appliance_python_deps() {
-  # The clusterdrill package requires Python >= 3.11 (pyproject.toml's
-  # requires-python), but Ubuntu 22.04's own default system python3 is 3.10
-  # - installing it explicitly and pointing pipx at it, rather than
-  # whatever `python3` resolves to, keeps this working on the documented
-  # Ubuntu 22.04 target (see ../../compatibility.json's os.release) without
-  # depending on the distro's own default ever changing.
-  sudo apt-get install -y -qq python3-pip python3.11 python3.11-venv pipx
-  CLUSTERDRILL_PYTHON_BIN="python3.11"
-  export CLUSTERDRILL_PYTHON_BIN
-  pipx ensurepath
-  export PATH="$HOME/.local/bin:$PATH"
-  # Ubuntu 22.04's apt-shipped pipx is 1.0.0, which predates the `pipx
-  # environment` subcommand (added in 1.1.0) deploy-appliance.sh relies on to
-  # locate pipx's own venv directory without hardcoding a path. Upgrade it
-  # via pip - decoupled from the python3.11 pinned above, pipx itself just
-  # needs to be new enough, not tied to any particular managed venv's
-  # interpreter.
-  python3 -m pip install --user --quiet --upgrade pipx
 }

@@ -95,16 +95,25 @@ jobs:
 
   # Proves compatibility.json's contract holds for real, without any real
   # cloud spend - a real kubeadm single-node cluster, bootstrapped on this
-  # runner itself (no EC2, no Terraform), installing the exact published
-  # app release (not PyPI, which has no clusterdrill package; not
-  # `latest`) and passing its own smoke test. runs-on is ubuntu-22.04
+  # runner itself (no EC2, no Terraform). runs-on is ubuntu-22.04
   # specifically, not ubuntu-latest, matching compatibility.json's own
   # documented OS support exactly rather than whatever ubuntu-latest
   # happens to alias to when this workflow runs.
+  #
+  # Matrixed over CLUSTERDRILL_DEPLOY's two states (see bootstrap/run.sh's
+  # own usage comment) rather than one fixed flow: false proves a bare lab
+  # cluster comes up cleanly with zero clusterdrill footprint (the default
+  # every real lab gets today), true proves the full opt-in install - helm
+  # install, the appliance reachable over its NodePort, and helm uninstall
+  # cleanly tearing it back down - actually works end to end.
   app-lab-compatibility-e2e:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        clusterdrill_deploy: [false, true]
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,23 +136,6 @@ jobs:
           sudo docker image prune -a -f 2>/dev/null || true
           df -h /
 
-      # deploy-appliance.sh's own default CLUSTERDRILL_APP_REPO is
-      # onahFran6/clusterdrill - the real, now-extracted standalone
-      # application repository - so no override argument is passed here
-      # any more. While that repository is still private, this ambient
-      # GITHUB_TOKEN (scoped only to *this* repository by GitHub Actions)
-      # cannot read its release assets cross-repo; a real fix needs
-      # either that repository to be public, or a separate PAT with read
-      # access to it, stored as a dedicated secret here. Until one of
-      # those happens, this step's own fetch fails, and so does the rest
-      # of this job (see deploy-appliance.sh's own error message). This
-      # file is deleted by control-plane.sh itself once the fetch
-      # completes.
-      - name: Write a token file for the release-asset fetch
-        run: |
-          echo -n "${{ secrets.GITHUB_TOKEN }}" > /tmp/gh-token
-          chmod 600 /tmp/gh-token
-
       # Run as the plain runner user, not `sudo bash ...` - these scripts
       # sudo internally only where needed (matching the real flow, where
       # the SSH login user is a non-root `ubuntu` with passwordless sudo,
@@ -155,15 +147,23 @@ jobs:
         run: |
           bash bootstrap/node-common.sh
           bash bootstrap/control-plane.sh 127.0.0.1
-          bash bootstrap/deploy-appliance.sh /tmp/gh-token
-          cp dashboard/headlamp-manifest.yaml /tmp/headlamp-manifest.yaml
-          bash bootstrap/deploy-headlamp.sh
         env:
           # This runner has no separate worker node at all, unlike a real
           # lab (which always provisions >= 1) - without this, the
           # appliance Deployment can never schedule: the control-plane's
           # default NoSchedule taint has nowhere else for it to go here.
           CLUSTERDRILL_LAB_SINGLE_NODE: "1"
+
+      # This matrix leg's whole point - mirrors an operator running
+      # `CLUSTERDRILL_DEPLOY=1 ./run.sh ...`.
+      - name: Deploy the clusterdrill appliance
+        if: matrix.clusterdrill_deploy
+        run: bash bootstrap/deploy-appliance.sh
+
+      - name: Deploy the Headlamp dashboard
+        run: |
+          cp dashboard/headlamp-manifest.yaml /tmp/headlamp-manifest.yaml
+          bash bootstrap/deploy-headlamp.sh
 
       - name: Verify helm and kustomize are the pinned versions
         run: |
@@ -176,20 +176,65 @@ jobs:
           test "${ACTUAL_HELM}" = "${HELM_VERSION}"
           test "${ACTUAL_KUSTOMIZE}" = "${KUSTOMIZE_VERSION}"
 
-      - name: Verify the deployed appliance is the exact contracted digest
+      # The other matrix leg's whole point - a user who never sets
+      # CLUSTERDRILL_DEPLOY should get a bare, working cluster with no trace
+      # of clusterdrill, not an undocumented side effect.
+      - name: Verify a bare cluster has zero clusterdrill footprint
+        if: ${{ !matrix.clusterdrill_deploy }}
         run: |
-          kubectl config set-context --current --namespace=clusterdrill-system
-          RUNNING_IMAGE="$(kubectl get deployment clusterdrill-web -o jsonpath='{.spec.template.spec.containers[0].image}')"
-          CONTRACT_DIGEST="$(python3 -c "import json; c=json.load(open('compatibility.json')); print(f\"{c['app']['image_repository']}@{c['app']['image_digest']}\")")"
+          if kubectl get namespace clusterdrill-system >/dev/null 2>&1; then
+            echo "clusterdrill-system namespace exists but CLUSTERDRILL_DEPLOY was never set" >&2
+            exit 1
+          fi
+          echo "bare cluster confirmed: no clusterdrill-system namespace"
+
+      # Doesn't compare against a hand-copied digest in compatibility.json -
+      # the published chart at app.chart_repository/app.version already
+      # pins its own image as a values.yaml default, so this proves the
+      # running Deployment matches what that exact pinned chart version
+      # would render, not a second, independently-maintained copy of the
+      # same fact that could silently drift from it.
+      - name: Verify the deployed appliance matches what the pinned chart version renders
+        if: matrix.clusterdrill_deploy
+        run: |
+          CONTRACT_VERSION="$(python3 -c "import json; print(json.load(open('compatibility.json'))['app']['version'])")"
+          CONTRACT_CHART="$(python3 -c "import json; print(json.load(open('compatibility.json'))['app']['chart_repository'])")"
+          EXPECTED_IMAGE="$(helm template clusterdrill "${CONTRACT_CHART}" --version "${CONTRACT_VERSION}" \
+            --namespace clusterdrill-system --set auth.existingSecretName=clusterdrill-web-auth \
+            --show-only templates/deployment.yaml | grep -E '^\s*image:' | awk '{print $2}')"
+          RUNNING_IMAGE="$(kubectl -n clusterdrill-system get deployment clusterdrill-web -o jsonpath='{.spec.template.spec.containers[0].image}')"
           echo "running:  ${RUNNING_IMAGE}"
-          echo "contract: ${CONTRACT_DIGEST}"
-          test "${RUNNING_IMAGE}" = "${CONTRACT_DIGEST}"
+          echo "expected: ${EXPECTED_IMAGE} (chart_repository@app.version's own rendered default)"
+          test "${RUNNING_IMAGE}" = "${EXPECTED_IMAGE}"
 
       - name: Smoke test - reach the appliance through its NodePort
+        if: matrix.clusterdrill_deploy
         run: |
-          NODEPORT="$(kubectl get svc clusterdrill -o jsonpath='{.spec.ports[0].nodePort}')"
+          NODEPORT="$(kubectl -n clusterdrill-system get svc clusterdrill -o jsonpath='{.spec.ports[0].nodePort}')"
           curl -fsS --retry 5 --retry-delay 3 "http://127.0.0.1:${NODEPORT}/" > /dev/null
           echo "smoke test: appliance responded on NodePort ${NODEPORT}"
+
+      # Proves the other half of the opt-in contract: bringing the
+      # appliance back down independently of the rest of the cluster.
+      # helm uninstall must remove the Deployment and the cluster-scoped
+      # ClusterRole, but leave the namespace and the password Secret alone
+      # (the chart never created either itself) - see the clusterdrill
+      # chart's own README "Upgrade and uninstall" section.
+      - name: Verify helm uninstall cleanly tears the appliance back down
+        if: matrix.clusterdrill_deploy
+        run: |
+          helm uninstall clusterdrill --namespace clusterdrill-system
+          if kubectl -n clusterdrill-system get deployment clusterdrill-web >/dev/null 2>&1; then
+            echo "clusterdrill-web Deployment survived helm uninstall" >&2
+            exit 1
+          fi
+          if kubectl get clusterrole clusterdrill-appliance >/dev/null 2>&1; then
+            echo "cluster-scoped ClusterRole clusterdrill-appliance survived helm uninstall" >&2
+            exit 1
+          fi
+          kubectl get namespace clusterdrill-system >/dev/null
+          kubectl -n clusterdrill-system get secret clusterdrill-web-auth >/dev/null
+          echo "helm uninstall removed the Deployment and the ClusterRole; namespace and password secret are untouched"
 
       - name: Verify the deployed Headlamp is the exact contracted image
         run: |

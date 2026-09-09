@@ -1,13 +1,12 @@
 {
-  "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs, and the Headlamp dashboard it also deploys. See bootstrap/control-plane.sh (the code that actually reads app.version/app.image_digest) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/control-plane.sh, bootstrap/node-common.sh, and dashboard/headlamp-manifest.yaml, together in the same commit whenever any of them change - they must never drift apart.",
+  "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs (opt-in, see bootstrap/deploy-appliance.sh and CLUSTERDRILL_DEPLOY in bootstrap/run.sh), and the Headlamp dashboard it also deploys. See bootstrap/deploy-appliance.sh (the code that actually reads app.version) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/deploy-appliance.sh, bootstrap/node-common.sh, and dashboard/headlamp-manifest.yaml, together in the same commit whenever any of them change - they must never drift apart. app.version is the only pin the lab tracks for this dependency: the published chart at app.chart_repository already carries that version's real image repository/digest as its own default, so this file deliberately does not duplicate them - see MAINTAINING.md's version-bump runbook.",
   "app": {
     "package": "clusterdrill",
-    "version": "0.1.0",
-    "image_repository": "docker.io/w00dson/clusterdrill",
-    "image_digest": "sha256:2b6b2979775c49a71742f7867a38a059f9723f11c14abbffea3fb1e7922b873e",
+    "version": "0.1.5",
+    "chart_repository": "oci://registry-1.docker.io/w00dson/clusterdrill-chart",
     "release_repository": "onahFran6/clusterdrill",
-    "install_method": "pip/pipx wheel install from a GitHub Release asset (release_repository, tag v<version>) - not PyPI, which has no clusterdrill package. See bootstrap/control-plane.sh.",
-    "required_privileges": "A single namespaced ClusterRole/ClusterRoleBinding pair scoped to the resource kinds the practice-bank question set actually needs (core, apps, batch, autoscaling, networking.k8s.io, policy, rbac.authorization.k8s.io, storage.k8s.io, apiextensions.k8s.io, plus explicitly-named questions/helm-crds CRD groups) - no cluster-admin binding, no wildcard apiGroup. See practice-bank/clusterdrill/manifests/local-appliance.yaml's ClusterRole and practice-bank/README.md's Security limits section.",
+    "install_method": "helm upgrade --install against the published OCI Helm chart (chart_repository, --version app.version) - no --set image.* flags, the chart already has that version's real image baked in as its own default. See bootstrap/deploy-appliance.sh.",
+    "required_privileges": "A single namespaced ClusterRole/ClusterRoleBinding pair scoped to the resource kinds the practice-bank question set actually needs (core, apps, batch, autoscaling, networking.k8s.io, policy, rbac.authorization.k8s.io, storage.k8s.io, apiextensions.k8s.io, plus explicitly-named questions/helm-crds CRD groups) - no cluster-admin binding, no wildcard apiGroup. See the clusterdrill repository's clusterdrill/helm/clusterdrill-chart/templates/clusterrole.yaml and its README's Security limits section.",
     "smoke_test_command": "kubectl -n clusterdrill-system rollout status deployment/clusterdrill-web --timeout=5m"
   },
   "dashboard": {

@@ -1,40 +1,24 @@
 #!/usr/bin/env bash
 # RHEL-family (RHEL, Rocky, CentOS, AlmaLinux, Fedora) implementation of the
-# os_install_* function contract - sourced by node-common.sh/
-# deploy-appliance.sh after detect_os_family (see os-family.sh) resolves to
-# "rhel". Written fresh against the public kubeadm RPM install docs
+# os_install_* function contract - sourced by node-common.sh after
+# detect_os_family (see os-family.sh) resolves to "rhel". Written fresh
+# against the public kubeadm RPM install docs
 # (https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
 # and Docker's own RPM install docs (https://docs.docker.com/engine/install/rhel/) -
 # no text or structure copied from any private or course-provided script.
 #
 # Unlike debian.sh, this path isn't run in CI - it has been verified once,
-# manually, against a real Rocky Linux 9 target (and the Fedora branch of
-# os_install_appliance_python_deps spot-checked on a real Fedora target too)
-# - see ../README.md's "Known limitations" for the full account of that run,
-# including the one real bug it caught (the exclude= line below).
+# manually, against a real Rocky Linux 9 target - see ../README.md's "Known
+# limitations" for the full account of that run, including the one real bug
+# it caught (the exclude= line below).
 
 # /etc/os-release's ID (rhel, rocky, centos, almalinux, fedora, ...) -
 # os-family.sh already collapsed this down to the coarse "rhel" family, but
-# EPEL/CRB and the Docker repo URL both fork on the exact distro within it.
+# the Docker repo URL forks on the exact distro within it.
 _rhel_id() {
   # shellcheck disable=SC1091 # the real /etc/os-release, not a repo file -
   # unfollowable by shellcheck by design, this always runs on a real host.
   (. /etc/os-release && echo "$ID")
-}
-
-# RHEL/Rocky/CentOS/AlmaLinux need EPEL (and, on version 9+, the CRB repo
-# EPEL itself depends on for some packages) enabled explicitly; Fedora ships
-# everything this file needs in its default repos already.
-_rhel_needs_epel() {
-  [ "$(_rhel_id)" != "fedora" ]
-}
-
-_rhel_ensure_epel() {
-  if _rhel_needs_epel && [ ! -f /etc/yum.repos.d/epel.repo ]; then
-    echo "node-common: enabling EPEL/CRB"
-    sudo dnf install -y epel-release
-    sudo dnf config-manager --set-enabled crb || true
-  fi
 }
 
 os_install_containerd() {
@@ -83,30 +67,4 @@ EOF
     | sudo tee -a /etc/yum.repos.d/kubernetes.repo >/dev/null
 
   sudo systemctl enable kubelet >/dev/null
-}
-
-os_install_appliance_python_deps() {
-  _rhel_ensure_epel
-
-  # Unlike Ubuntu 22.04's fixed "system python3 is 3.10" situation,
-  # RHEL-family releases vary: RHEL/Rocky 9's default python3 is 3.9
-  # (needs an explicit side-by-side python3.11 install), while Fedora's
-  # default python3 is often already >= 3.11 depending on release (where
-  # a hardcoded `dnf install python3.11` package may not even exist under
-  # that exact name). Detect rather than assume.
-  local system_minor
-  system_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
-  if [ "$system_minor" -ge 11 ]; then
-    CLUSTERDRILL_PYTHON_BIN="python3"
-  else
-    sudo dnf install -y python3.11
-    CLUSTERDRILL_PYTHON_BIN="python3.11"
-  fi
-  export CLUSTERDRILL_PYTHON_BIN
-
-  # pipx: Fedora's default repos carry it; RHEL/Rocky need EPEL, already
-  # enabled above.
-  sudo dnf install -y pipx
-  pipx ensurepath
-  export PATH="$HOME/.local/bin:$PATH"
 }
