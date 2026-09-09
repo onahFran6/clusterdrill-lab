@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.2](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.1...clusterdrill-lab-v0.1.2) (2026-09-07)
+
+
+### Features
+
+* **bootstrap:** install helm and kustomize for CKAD practice ([#8](https://github.com/onahFran6/clusterdrill-lab/issues/8)) ([504ab5f](https://github.com/onahFran6/clusterdrill-lab/commit/504ab5f7c56a5d6132bd00c95960eff434ad2dfd))
+
+## [0.1.1](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.0...clusterdrill-lab-v0.1.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **bootstrap:** make bootstrap resumable and catch bad config early ([a5e0650](https://github.com/onahFran6/clusterdrill-lab/commit/a5e0650379ba847a30afff2729ee5693742bf90c))
+
 ## 0.1.0 (2026-09-06)
 
 
