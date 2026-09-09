@@ -2,7 +2,7 @@
   "$comment": "Machine-readable contract between this lab and the clusterdrill application release it installs (opt-in, see bootstrap/deploy-appliance.sh and CLUSTERDRILL_DEPLOY in bootstrap/run.sh), and the Headlamp dashboard it also deploys. See bootstrap/deploy-appliance.sh (the code that actually reads app.version) and bootstrap/README.md. Update this file, and the pinned versions in bootstrap/deploy-appliance.sh, bootstrap/node-common.sh, and dashboard/headlamp-manifest.yaml, together in the same commit whenever any of them change - they must never drift apart. app.version is the only pin the lab tracks for this dependency: the published chart at app.chart_repository already carries that version's real image repository/digest as its own default, so this file deliberately does not duplicate them - see MAINTAINING.md's version-bump runbook.",
   "app": {
     "package": "clusterdrill",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "chart_repository": "oci://registry-1.docker.io/w00dson/clusterdrill-chart",
     "release_repository": "onahFran6/clusterdrill",
     "install_method": "helm upgrade --install against the published OCI Helm chart (chart_repository, --version app.version) - no --set image.* flags, the chart already has that version's real image baked in as its own default. See bootstrap/deploy-appliance.sh.",

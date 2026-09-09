@@ -21,7 +21,7 @@ fi
 # repository/digest as its own values.yaml default - nothing here resolves
 # or passes an image reference. See compatibility.json's app.chart_repository
 # for where this version is actually published.
-CLUSTERDRILL_VERSION="0.1.5"
+CLUSTERDRILL_VERSION="0.1.6"
 CLUSTERDRILL_CHART="oci://registry-1.docker.io/w00dson/clusterdrill-chart"
 CLUSTERDRILL_NAMESPACE="clusterdrill-system"
 CLUSTERDRILL_SECRET="clusterdrill-web-auth"
