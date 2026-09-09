@@ -74,11 +74,18 @@ cd ../../bootstrap
 ./run.sh outputs.json ~/.ssh/id_ed25519   # your private key, paired with ssh_public_key above
 ```
 
-If the app repository is still private, `run.sh` takes a third argument -
-see [`../../bootstrap/README.md`](../../bootstrap/README.md#installing-while-the-app-repository-is-still-private).
+This provisions a bare, working Kubernetes cluster with no `clusterdrill`
+footprint. Set `CLUSTERDRILL_DEPLOY=1` to also install the `clusterdrill`
+appliance into it - see
+[`../../bootstrap/README.md`](../../bootstrap/README.md#flow):
 
-`run.sh` prints a login password near the end of its output - keep it,
-you'll need it for the appliance's web UI.
+```sh
+CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
+`run.sh` prints a login password near the end of its output when
+`CLUSTERDRILL_DEPLOY=1` - keep it, you'll need it for the appliance's web
+UI.
 
 ## Verifying the lab
 
@@ -258,13 +265,14 @@ up yourself before destroying:
 
 | Component | Version | Pinned? |
 | --- | --- | --- |
-| OS | Ubuntu 22.04 LTS (Jammy) | Yes, deliberately - AMI filter in `main.tf`, not a variable. `deploy-appliance.sh` depends on 22.04-specific details (its system Python and apt-shipped pipx version); `compatibility.json`'s `os.release` records the same pin and `check_compatibility_contract.sh` fails if the two drift apart. |
+| OS | Ubuntu 22.04 LTS (Jammy) | Yes, deliberately - AMI filter in `main.tf`, not a variable. `node-common.sh`'s containerd/kube-package install steps are tested against this exact release; `compatibility.json`'s `os.release` records the same pin and `check_compatibility_contract.sh` fails if the two drift apart. |
 | Architecture | amd64 or arm64, per node role | Yes - `control_plane_architecture`/`worker_architecture` each select their own Ubuntu 22.04 AMI; defaults to amd64. A mixed lab (e.g. amd64 control-plane, Graviton workers) is supported - the published `clusterdrill` appliance image is a multi-arch manifest, and `bootstrap/control-plane.sh` already resolves the Cilium CLI's architecture dynamically |
 | Kubernetes (kubelet/kubeadm/kubectl) | 1.33.x | Minor pinned (`KUBERNETES_MINOR` in `node-common.sh`); exact patch is whatever `pkgs.k8s.io`'s `stable:/v1.33` channel resolves to at install time |
 | containerd | Ubuntu 22.04's `containerd` apt package | Not pinned - whatever version Ubuntu's own apt repos serve at install time |
 | Cilium | 1.16.5 | Yes - `CILIUM_VERSION` in `control-plane.sh` |
 | cilium-cli | v0.16.16 | Yes - `CILIUM_CLI_VERSION` in `control-plane.sh` |
-| Helm | Not applicable | No Helm chart exists yet for the `clusterdrill` package (a separate, not-yet-built distribution path) |
+| `clusterdrill` Helm chart | Pinned in `compatibility.json`'s `app.version` | Yes, deliberately - `deploy-appliance.sh` installs the published chart at that exact version, opt-in via `CLUSTERDRILL_DEPLOY=1` (see `bootstrap/README.md`) |
+| Helm / kustomize (CKAD practice tools) | `HELM_VERSION`/`KUSTOMIZE_VERSION` in `lib/practice-tools.sh` | Yes - installed on every node for the operator's own practice use, unrelated to the `clusterdrill` chart row above |
 | Terraform | >= 1.5.0 | Minimum version constraint in `versions.tf`, not an exact pin |
 | `hashicorp/aws` provider | ~> 5.0 | Constraint in `versions.tf`; exact resolved version is in the committed `.terraform.lock.hcl` |
 
