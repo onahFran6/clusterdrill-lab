@@ -35,23 +35,42 @@ cluster by hand without running any of these scripts, see
      command).
    - Runs [`worker.sh`](worker.sh) on every worker node (`kubeadm join`,
      using the command `control-plane.sh` generated).
-   - Only once every worker has joined, runs
-     [`deploy-appliance.sh`](deploy-appliance.sh) on the control-plane
-     node to install and deploy `clusterdrill` - its Deployment has no
-     toleration for the control-plane's own taint, so it can only
-     schedule once a worker actually exists to run it (this is also why
-     it's a separate script from `control-plane.sh`, not the tail end of
-     it: deploying it any earlier just hangs until `kubectl rollout
-     status`'s own timeout in any real, non-single-node lab).
+   - Only once every worker has joined, and only if `CLUSTERDRILL_DEPLOY=1`
+     is set (see below), runs [`deploy-appliance.sh`](deploy-appliance.sh)
+     on the control-plane node to `helm install`/`upgrade` the published
+     `clusterdrill` chart - its Deployment has no toleration for the
+     control-plane's own taint, so it can only schedule once a worker
+     actually exists to run it (this is also why it's a separate script
+     from `control-plane.sh`, not the tail end of it: deploying it any
+     earlier just hangs until `kubectl rollout status`'s own timeout in
+     any real, non-single-node lab).
    - Then runs [`deploy-headlamp.sh`](deploy-headlamp.sh) on the
      control-plane node to install the
      [Headlamp](https://github.com/kubernetes-sigs/headlamp) dashboard
      (`../dashboard/headlamp-manifest.yaml`) - same ordering constraint
-     and same reason as the appliance above.
+     as the appliance above, but always runs regardless of
+     `CLUSTERDRILL_DEPLOY`.
 
 ```sh
 terraform -chdir=../providers/aws output -json > outputs.json
 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
+By default this produces a bare, working Kubernetes cluster with no
+`clusterdrill` footprint at all - only Headlamp is deployed alongside it.
+Set `CLUSTERDRILL_DEPLOY=1` to also have the `clusterdrill` appliance
+installed into the cluster:
+
+```sh
+CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
+To bring just the appliance back down later, independent of the rest of
+the cluster or the Terraform-provisioned VMs themselves:
+
+```sh
+ssh -i ~/.ssh/id_ed25519 <ssh-user>@<control-plane-ip> \
+  helm uninstall clusterdrill --namespace clusterdrill-system
 ```
 
 ### What `run.sh` prints when it finishes
@@ -72,48 +91,31 @@ The Headlamp NodePort is queried fresh from the cluster right after `deploy-head
 see `run.sh`'s own comment at that line for why (a stable fact the API server already knows, not
 something worth scraping out of a remote script's stdout). The `clusterdrill` appliance itself
 has no equivalent line here yet - `run.sh` doesn't print its NodePort today, only its login
-password (from `deploy-appliance.sh`'s own output, earlier in the same run) - see
+password when `CLUSTERDRILL_DEPLOY=1` (from `deploy-appliance.sh`'s own output, earlier in the
+same run) - see
 `providers/aws/README.md`'s ["Verifying the lab"](../providers/aws/README.md#verifying-the-lab)
 section for how to find and reach it in the meantime.
 
 `../compatibility.json` is the machine-readable contract between this lab,
 the `clusterdrill` application release it installs, and the Headlamp
-dashboard it also deploys - supported Kubernetes range, exact
-versions/image references, install methods, required privileges, and the
-smoke-test commands `deploy-appliance.sh`/`deploy-headlamp.sh` themselves
-run. `check_compatibility_contract.sh` verifies it stays in sync with the
+dashboard it also deploys - supported Kubernetes range, the pinned chart
+version, install methods, required privileges, and the smoke-test commands
+`deploy-appliance.sh`/`deploy-headlamp.sh` themselves run.
+`check_compatibility_contract.sh` verifies it stays in sync with the
 actual pinned values in `node-common.sh`/`deploy-appliance.sh`/
 `dashboard/headlamp-manifest.yaml` - CI runs it on every change to any of
 them.
 
-### Installing while the app repository is still private
-
-No `clusterdrill` package is published to PyPI - `deploy-appliance.sh`
-installs a wheel from the app repository's own GitHub Release instead
-(see `compatibility.json`'s `app.install_method`). That works with a
-plain public URL once the app repository is public; until then, pass a
-GitHub token (one that can read that repository) as `run.sh`'s third
-argument - a **file path**, never the token value itself, the same
-convention `run.sh` already uses for the SSH private key:
-
-```sh
-./run.sh outputs.json ~/.ssh/id_ed25519 ~/.clusterdrill-github-token
-```
-
-The token file is copied to the control-plane node, used once, and
-deleted immediately after - it's never logged, never becomes a
-command-line argument on either end of the SSH connection, and this
-repository never sees its contents.
-
 ## Known limitations
 
-- **The deployed image may be stale.** `deploy-appliance.sh` resolves
-  the image the same way the Minikube path's `clusterdrill local
-  install` does without `--image`: the release digest paired with the
-  installed package version. Until a release matching current source is
-  published, this is a real, honest limitation - see the practice-bank
-  README's "Release policy" section for the full explanation of why an
-  older published image doesn't reflect current source.
+- **The deployed appliance version is a deliberate pin, not always
+  "latest."** `deploy-appliance.sh`'s `CLUSTERDRILL_VERSION` (kept in sync
+  with `compatibility.json`'s `app.version` by
+  `check_compatibility_contract.sh`) is bumped by hand, the same
+  discipline as every other pinned dependency in this repo (Kubernetes
+  minor, Cilium, Ubuntu release - see `MAINTAINING.md`'s version-bump
+  runbook). A newer `clusterdrill` release can exist upstream before this
+  repo has deliberately picked it up - that's expected, not a bug.
 - **Single control-plane, not HA.** This is a disposable practice lab,
   not a production reference architecture - one control-plane node is
   the deliberate scope.
@@ -121,27 +123,26 @@ repository never sees its contents.
   manually, against a real Rocky Linux 9 target - it is not yet in
   CI.** `providers/aws/` only ever provisions Ubuntu, so this was a
   privileged, systemd-enabled Rocky 9 container, not `providers/aws/`
-  itself: `os_install_containerd`, `os_install_kube_packages`, and
-  `os_install_appliance_python_deps` all ran for real, and `kubeadm
-  init` produced a fully healthy control plane (etcd, kube-apiserver,
-  kube-controller-manager, and kube-scheduler all `Running`). That run
-  caught and fixed a real bug: dnf's `exclude=` line blocks the
-  packages it names from a plain `dnf install`, not just a later `dnf
-  upgrade` (unlike `apt-mark hold`) - `os_install_kube_packages` now
-  adds it to the repo file only after the install, not in the same
-  write. Fedora's "default `python3` may already be >= 3.11" branch
-  (see `os_install_appliance_python_deps`) was separately spot-checked
-  on a real Fedora 41 container and confirmed correct. Two failures
-  during that same run were nested-container-testing artifacts, not
-  code bugs, and needed no code change: `swapoff -a` can't disable the
-  *host* Docker Desktop VM's own swap from inside a container, and
-  containerd's overlay snapshotter can't stack on the host's own
-  overlay2 root filesystem ("overlay-on-overlay") - both are non-issues
-  on a real target VM. This still isn't wired into CI (see the
-  `run.sh`/`/tmp/lib` bullet below, and `providers/aws`'s Ubuntu-only
-  scope) - same honesty bar as the Debian/Ubuntu path's own
-  real-AWS-run note above, just for a manual RHEL-family run instead of
-  a CI one.
+  itself: `os_install_containerd` and `os_install_kube_packages` both
+  ran for real, and `kubeadm init` produced a fully healthy control
+  plane (etcd, kube-apiserver, kube-controller-manager, and
+  kube-scheduler all `Running`). That run caught and fixed a real bug:
+  dnf's `exclude=` line blocks the packages it names from a plain `dnf
+  install`, not just a later `dnf upgrade` (unlike `apt-mark hold`) -
+  `os_install_kube_packages` now adds it to the repo file only after
+  the install, not in the same write. Two failures during that same run
+  were nested-container-testing artifacts, not code bugs, and needed no
+  code change: `swapoff -a` can't disable the *host* Docker Desktop VM's
+  own swap from inside a container, and containerd's overlay snapshotter
+  can't stack on the host's own overlay2 root filesystem
+  ("overlay-on-overlay") - both are non-issues on a real target VM. This
+  still isn't wired into CI (see the `run.sh`/`/tmp/lib` bullet below,
+  and `providers/aws`'s Ubuntu-only scope) - same honesty bar as the
+  Debian/Ubuntu path's own real-AWS-run note above, just for a manual
+  RHEL-family run instead of a CI one. (That original run also verified
+  `os_install_appliance_python_deps`, since deleted alongside the rest
+  of `deploy-appliance.sh`'s pipx-based install path - see git history
+  before this file's move to Helm if you need that account.)
 - **`run.sh` ships `bootstrap/lib/` to each remote host at a hardcoded
   path (`/tmp/lib`), coupled to `run_remote_script`'s own hardcoded
   flatten target (`/tmp/<script-name>`).** Nothing enforces this
@@ -150,8 +151,7 @@ repository never sees its contents.
   silently, since CI's own e2e job never calls `run.sh` at all (it runs
   the scripts directly from a full repo checkout, where this coupling
   doesn't exist). See the cross-referencing comments at `run.sh`'s
-  `scp -r ... /tmp/lib` line and `node-common.sh`/`deploy-appliance.sh`'s
-  `source` line.
+  `scp -r ... /tmp/lib` line and `node-common.sh`'s own `source` line.
 - **`lib/practice-tools.sh`'s arm64 install path (`helm`/`kustomize`) is
   implemented but not exercised by any CI job today.**
   The real e2e job below runs on an amd64 GitHub-hosted runner only;
@@ -162,23 +162,22 @@ repository never sees its contents.
   smaller-blast-radius path.
 - **The kubeadm/Cilium/clusterdrill bootstrap flow is verified in CI on a
   real single-node kubeadm cluster** (`.github/workflows/lab-quality-gate.yml`'s
-  `app-lab-compatibility-e2e` job - node-common.sh, control-plane.sh, and
-  deploy-appliance.sh run for real on the CI runner itself, install the
-  exact published release, and the deployed appliance's own smoke test
-  must pass) **and has been run end to end against a real
-  AWS-provisioned multi-node cluster**, including a mixed
-  amd64-control-plane/arm64-worker lab: `terraform apply` against
-  `../providers/aws/`, both nodes joined, the appliance scheduled onto
-  the (arm64) worker and passed its own health check, and it was reached
-  over its NodePort from outside AWS entirely. That first real run is
-  also what found and fixed several bugs CI's single-node shape can't
-  catch: the ordering issue this file's own "Flow" section above now
-  documents (deploying the appliance before any worker joins would hang
-  until `kubectl rollout status`'s own timeout), the security-group
-  description AWS's API rejects, `run.sh` never exposing
-  `deploy-appliance.sh`'s repo override, and Ubuntu 22.04's apt-shipped
-  pipx predating the `pipx environment` subcommand this script relies
-  on.
+  `app-lab-compatibility-e2e` job, matrixed over `CLUSTERDRILL_DEPLOY`
+  both unset and `1` - node-common.sh and control-plane.sh always run for
+  real on the CI runner itself; the `1` leg also runs deploy-appliance.sh,
+  installs the exact pinned chart version, smoke-tests the appliance over
+  its NodePort, and proves `helm uninstall` cleanly tears it back down;
+  the unset leg proves a bare cluster has zero clusterdrill footprint)
+  **and has been run end to end against a real AWS-provisioned multi-node
+  cluster**, including a mixed amd64-control-plane/arm64-worker lab:
+  `terraform apply` against `../providers/aws/`, both nodes joined, the
+  appliance scheduled onto the (arm64) worker and passed its own health
+  check, and it was reached over its NodePort from outside AWS entirely.
+  That first real run is also what found and fixed several bugs CI's
+  single-node shape can't catch: the ordering issue this file's own
+  "Flow" section above now documents (deploying the appliance before any
+  worker joins would hang until `kubectl rollout status`'s own timeout)
+  and the security-group description AWS's API rejects.
 
 ## Security notes
 
@@ -190,12 +189,9 @@ repository never sees its contents.
   contents - `run.sh` only ever passes `-i <path>` to `ssh`/`scp`,
   which read the file locally themselves.
 - `deploy-appliance.sh` generates a random login password for the
-  appliance and prints it once at the end of the run - it is not
-  written to any file this script controls beyond the in-cluster
-  Secret `local_install` itself already creates.
-- A GitHub token, when supplied for the still-private-app-repository
-  fetch above, is only ever a file path passed between `run.sh` and
-  `deploy-appliance.sh` - never a command-line argument or logged value
-  on either end of the SSH connection - and `deploy-appliance.sh`
-  deletes the remote copy of that file immediately after using it, on
-  every exit path (a `trap`, not just the success path).
+  appliance the first time it runs and prints it once at the end - it is
+  not written to any file this script controls beyond the in-cluster
+  `clusterdrill-web-auth` Secret it creates. A later re-run against a lab
+  that already has that Secret reuses it rather than rotating the
+  password out from under an operator who already has it (and does not
+  reprint it, since it no longer knows the value).

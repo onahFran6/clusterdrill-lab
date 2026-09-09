@@ -24,8 +24,10 @@ architecture-overview work, issue #170). This doc picks up one level down: the i
 1. `node-common.sh` on **every** node (control-plane and workers alike).
 2. `control-plane.sh` on the control-plane node only.
 3. `worker.sh` on every worker node, once `control-plane.sh` has finished.
-4. `deploy-appliance.sh` on the control-plane node, only after **every** worker has joined.
-5. `deploy-headlamp.sh` on the control-plane node, right after the appliance.
+4. `deploy-appliance.sh` on the control-plane node, only after **every** worker has joined, and
+   only if the operator set `CLUSTERDRILL_DEPLOY=1` - see `run.sh`'s own usage comment. Unset,
+   `run.sh` skips this step entirely and step 3 hands off straight to step 5.
+5. `deploy-headlamp.sh` on the control-plane node, right after step 4 (whether or not step 4 ran).
 
 Steps 4 and 5 are separate scripts run *after* every worker joins, not folded into
 `control-plane.sh`, because both Deployments they create have no toleration for the
@@ -33,7 +35,9 @@ control-plane's own `NoSchedule` taint. In a real multi-node lab, either Deploym
 schedule once a worker node actually exists to run on it - running them any earlier would just
 hang until `kubectl rollout status`'s own timeout and fail. `bootstrap/README.md`'s "Flow" section
 and `run.sh`'s own comments document this same reasoning; it's restated here because it's the key
-fact that explains why this is five scripts instead of three.
+fact that explains why this is five scripts instead of three. Step 4 is additionally the one
+opt-in step in this whole flow - deploying `clusterdrill` into the lab cluster is a deliberate
+operator choice, not a default side effect of bringing the cluster up.
 
 The rest of this doc walks through what each step actually does, in the same order.
 
@@ -243,29 +247,39 @@ Once every worker has joined, `run.sh` moves on to the two Deployments that were
 
 ## 5. Appliance install (`deploy-appliance.sh`)
 
-Run on the control-plane node, by `run.sh`, only after every `worker.sh` invocation has completed -
-see [Order of operations](#order-of-operations) above for why the ordering matters.
+Run on the control-plane node, by `run.sh`, only when the operator set `CLUSTERDRILL_DEPLOY=1` and
+only after every `worker.sh` invocation has completed - see
+[Order of operations](#order-of-operations) above for why the ordering matters, and why this step
+is opt-in at all: unset, `run.sh` leaves the lab as a bare, working Kubernetes cluster.
 
-At a high level: install a Python 3.11 environment via `pipx` (Ubuntu 22.04's default `python3` is
-3.10, older than the `clusterdrill` package's `requires-python`), fetch the pinned release wheel
-(public release URL first, falling back to the GitHub API with a supplied token while the app
-repository is still private - see `bootstrap/README.md`'s
-["Installing while the app repository is still private"](../bootstrap/README.md#installing-while-the-app-repository-is-still-private)
-section for that mechanism), `pipx install` it, then resolve and apply its Kubernetes manifest.
+At a high level: create the `clusterdrill-system` namespace and a `clusterdrill-web-auth` Secret
+holding a freshly-generated random password (skipped, idempotently, if a later re-run finds either
+already exists), then `helm upgrade --install` the published `clusterdrill` chart against that
+namespace, referencing the Secret via `--set auth.existingSecretName`. No image reference is
+resolved or passed anywhere in this script - the published chart already has its own release's
+image repository/digest baked in as a `values.yaml` default (see the chart's own README "Install"
+section), so a plain `helm install` with no `--set image.*` flags is the whole story.
 
-**The pinned artifact.** `compatibility.json`'s `app.version` and `app.image_digest` are the
-authoritative pin - `deploy-appliance.sh`'s own `CLUSTERDRILL_BOOTSTRAP_VERSION` constant must
-match `app.version` exactly, and `bootstrap/check_compatibility_contract.sh` enforces that in CI
-so the two can never silently drift apart. The image itself is resolved by digest, not just a
-version tag, the same way the Minikube-based local-install path resolves it without an explicit
-`--image` override.
+**The pinned artifact.** `compatibility.json`'s `app.version` is the authoritative pin -
+`deploy-appliance.sh`'s own `CLUSTERDRILL_VERSION` constant must match it exactly, and
+`bootstrap/check_compatibility_contract.sh` enforces that in CI so the two can never silently
+drift apart. Unlike the pre-Helm raw-manifest flow this replaced, this repository does not also
+track the image digest independently - duplicating a fact the chart itself already pins per
+version would only invite drift, not add safety. See `MAINTAINING.md`'s version-bump runbook for
+how `app.version` gets bumped deliberately, the same discipline as every other pinned dependency
+here (Kubernetes minor, Cilium, Ubuntu release).
 
 **RBAC.** What ClusterRole/ClusterRoleBinding the appliance is granted, and why, is documented
-once in `compatibility.json`'s `app.required_privileges` field (which itself points at
-`practice-bank/clusterdrill/manifests/local-appliance.yaml`'s actual ClusterRole and
-`practice-bank/README.md`'s Security limits section) - deliberately not restated here, so this doc
-can't drift out of sync with the real manifest the way a second copy of an RBAC list always
-eventually does.
+once in `compatibility.json`'s `app.required_privileges` field (which itself points at the
+`clusterdrill` chart's own `templates/clusterrole.yaml` and its README's Security limits section) -
+deliberately not restated here, so this doc can't drift out of sync with the real chart the way a
+second copy of an RBAC list always eventually does.
+
+**Tearing it back down.** `helm uninstall clusterdrill --namespace clusterdrill-system` removes
+everything the chart created, including the cluster-scoped ClusterRole/ClusterRoleBinding - but not
+the `clusterdrill-system` namespace or the `clusterdrill-web-auth` Secret, since the chart never
+creates either of those itself (see the chart's own README "Upgrade and uninstall" section). This
+is independent of tearing down the rest of the lab cluster or the Terraform-provisioned VMs.
 
 **Why this step waits for workers.** The appliance's Deployment carries no toleration for the
 control-plane's own `NoSchedule` taint (`node-role.kubernetes.io/control-plane`). A `Deployment`
@@ -432,15 +446,16 @@ kubectl get pods -A    # kube-system pods and Cilium's own agent/operator pods s
 ```
 
 At this point you have a working two-node cluster with Cilium installed - the same state
-`bootstrap/run.sh` reaches right before it hands off to `deploy-appliance.sh`. Installing the
-`clusterdrill` appliance and Headlamp dashboard by hand from here follows the same reasoning laid
-out in [Appliance install](#5-appliance-install-deploy-appliancesh) and
+`bootstrap/run.sh` reaches right before it hands off to `deploy-appliance.sh` (if
+`CLUSTERDRILL_DEPLOY=1`) and `deploy-headlamp.sh`. Installing the `clusterdrill` appliance and
+Headlamp dashboard by hand from here follows the same reasoning laid out in
+[Appliance install](#5-appliance-install-deploy-appliancesh) and
 [Dashboard install](#6-dashboard-install-deploy-headlampsh) above, but is not repeated as a manual
-command sequence here: both depend on artifacts (the pinned wheel, the Headlamp manifest) that are
-this project's own build output rather than upstream commands, so "do it by hand" for those two
-steps is really "read `bootstrap/deploy-appliance.sh` and `bootstrap/deploy-headlamp.sh` and adapt
-them," not a generic recipe that stays useful outside this repository the way the kubeadm/Cilium
-sequence above does.
+command sequence here: the appliance install is just a `helm install` against a public OCI chart
+(genuinely reproducible by hand - see the chart's own README), but the Headlamp step depends on
+this project's own build output (the Headlamp manifest) rather than an upstream command, so "do it
+by hand" for that one is really "read `bootstrap/deploy-headlamp.sh` and adapt it," not a generic
+recipe that stays useful outside this repository the way the kubeadm/Cilium sequence above does.
 
 **A note on how thoroughly this appendix was checked.** The command sequence above was checked for
 internal consistency against the actual current `bootstrap/node-common.sh` and

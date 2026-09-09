@@ -42,7 +42,7 @@ flowchart TD
         NC["node-common.sh\non every node: containerd, kubelet, kubeadm, kubectl"]
         CTL["control-plane.sh\nkubeadm init + Cilium install +\ngenerates the worker join command"]
         WRK["worker.sh\non every worker: kubeadm join"]
-        DAPP["deploy-appliance.sh\ninstalls clusterdrill, only after every worker has joined"]
+        DAPP["deploy-appliance.sh\nhelm installs clusterdrill, opt-in via CLUSTERDRILL_DEPLOY=1,\nonly after every worker has joined"]
         DASH["deploy-headlamp.sh\ninstalls Headlamp, only after every worker has joined"]
         RUN --> NC
         NC --> CTL
@@ -79,14 +79,18 @@ Reading order:
 3. **`bootstrap/run.sh`** reads that JSON and, over SSH, drives every other script in order: first
    `node-common.sh` on every node, then `control-plane.sh` on the control-plane node alone, then
    `worker.sh` on each worker once the join command exists. Only after every worker has joined does
-   it run `deploy-appliance.sh` and then `deploy-headlamp.sh` - both Deployments lack a toleration
-   for the control-plane's own taint, so deploying either earlier just hangs until `kubectl rollout
-   status` times out. See [`bootstrap/README.md`](../bootstrap/README.md#flow) for the full flow this
-   diagram mirrors.
-4. The result is a running **`clusterdrill`** appliance (`clusterdrill-system` namespace) and a
-   **Headlamp** dashboard (`headlamp-system` namespace), each exposed as a `NodePort` Service. The
-   security group's `nodeport_range` rule already permits reaching both from the operator's own
-   CIDR - see [`providers/aws/README.md`](../providers/aws/README.md#verifying-the-lab) and its
+   it run `deploy-appliance.sh` (`helm install`/`upgrade` against the published `clusterdrill`
+   chart) and then `deploy-headlamp.sh` - both Deployments lack a toleration for the control-plane's
+   own taint, so deploying either earlier just hangs until `kubectl rollout status` times out.
+   `deploy-appliance.sh` is also the one opt-in step in this whole flow: it only runs when the
+   operator sets `CLUSTERDRILL_DEPLOY=1`; unset, `run.sh` still produces a bare, working cluster
+   with Headlamp but no `clusterdrill` footprint. See
+   [`bootstrap/README.md`](../bootstrap/README.md#flow) for the full flow this diagram mirrors.
+4. The result is a bare Kubernetes cluster with a **Headlamp** dashboard (`headlamp-system`
+   namespace) and, if `CLUSTERDRILL_DEPLOY=1` was set, a running **`clusterdrill`** appliance
+   (`clusterdrill-system` namespace) - each exposed as a `NodePort` Service. The security group's
+   `nodeport_range` rule already permits reaching either from the operator's own CIDR - see
+   [`providers/aws/README.md`](../providers/aws/README.md#verifying-the-lab) and its
    [Headlamp section](../providers/aws/README.md#headlamp-dashboard) for the exact commands and
    login flow.
 
@@ -117,7 +121,7 @@ flowchart TD
             CILIUMAGENT["cilium-agent\n(DaemonSet, every node)"]
         end
 
-        subgraph NS1["clusterdrill-system namespace (deploy-appliance.sh)"]
+        subgraph NS1["clusterdrill-system namespace (deploy-appliance.sh, opt-in via CLUSTERDRILL_DEPLOY=1)"]
             APPDEPLOY["Deployment: clusterdrill-web"]
             APPSVC["Service: clusterdrill (NodePort)"]
             APPRBAC["ServiceAccount + ClusterRole + ClusterRoleBinding"]
