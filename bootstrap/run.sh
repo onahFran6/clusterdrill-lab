@@ -143,6 +143,15 @@ for host in "$CONTROL_PLANE_IP" "${WORKER_IPS[@]}"; do
   # to the exact sibling path (/tmp/lib) that flattening implies. Only once
   # per host: deploy-appliance.sh runs later in this same script but only on
   # $CONTROL_PLANE_IP, which already has /tmp/lib from this loop iteration.
+  #
+  # The explicit rm -rf first matters on a re-run against a host that
+  # already has /tmp/lib from an earlier invocation: scp -r copies a source
+  # directory INTO an already-existing destination directory rather than
+  # overwriting it (producing a stale, nested /tmp/lib/lib/*.sh instead of
+  # updating /tmp/lib/*.sh directly) - found by hitting it on a real re-run,
+  # not in theory.
+  # shellcheck disable=SC2029
+  ssh "${SSH_OPTS[@]}" "${SSH_USER}@${host}" "rm -rf /tmp/lib"
   scp "${SSH_OPTS[@]}" -rq "${SCRIPT_DIR}/lib" "${SSH_USER}@${host}:/tmp/lib"
   run_remote_script "$host" "${SCRIPT_DIR}/node-common.sh"
 done
