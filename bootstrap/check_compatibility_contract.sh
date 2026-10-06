@@ -16,8 +16,8 @@ CONTRACT_DASHBOARD_IMAGE="$(python3 -c "import json; print(json.load(open('${LAB
 CONTRACT_OS_RELEASE="$(python3 -c "import json; print(json.load(open('${LAB_DIR}/compatibility.json'))['os']['release'])")"
 
 FAIL=0
-if ! grep -q "CLUSTERDRILL_BOOTSTRAP_VERSION=\"${CONTRACT_VERSION}\"" "${SCRIPT_DIR}/deploy-appliance.sh"; then
-  echo "compatibility.json's app.version (${CONTRACT_VERSION}) does not match bootstrap/deploy-appliance.sh's CLUSTERDRILL_BOOTSTRAP_VERSION" >&2
+if ! grep -q "CLUSTERDRILL_VERSION=\"${CONTRACT_VERSION}\"" "${SCRIPT_DIR}/deploy-appliance.sh"; then
+  echo "compatibility.json's app.version (${CONTRACT_VERSION}) does not match bootstrap/deploy-appliance.sh's CLUSTERDRILL_VERSION" >&2
   FAIL=1
 fi
 if ! grep -q "KUBERNETES_MINOR=\"${CONTRACT_K8S_MINOR}\"" "${SCRIPT_DIR}/node-common.sh"; then

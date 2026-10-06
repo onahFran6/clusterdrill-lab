@@ -24,6 +24,10 @@ echo "node-common: detected OS family: ${OS_FAMILY}"
 # shellcheck disable=SC1090 # dynamic path, resolved to one of this
 # directory's own lib/{debian,rhel}.sh at runtime - see os-family.sh.
 source "${SCRIPT_DIR}/lib/${OS_FAMILY}.sh"
+# Not family-dispatched like the source above - practice-tools.sh installs
+# the same way regardless of OS family, see its own header comment.
+# shellcheck source=bootstrap/lib/practice-tools.sh
+source "${SCRIPT_DIR}/lib/practice-tools.sh"
 
 echo "node-common: disabling swap"
 sudo swapoff -a
@@ -48,5 +52,8 @@ sudo sysctl --system >/dev/null
 os_install_containerd
 
 os_install_kube_packages "$KUBERNETES_MINOR"
+
+install_helm
+install_kustomize
 
 echo "node-common: done"

@@ -1,147 +1,71 @@
 #!/usr/bin/env bash
-# Installs and deploys the clusterdrill appliance onto an already-bootstrapped
-# cluster. Run on the control-plane node only, by run.sh, only after
-# control-plane.sh has finished and every worker.sh has completed - the
-# Deployment this creates has no toleration for the control-plane's own
-# NoSchedule taint, so it can only schedule once at least one worker node
-# has actually joined (CLUSTERDRILL_LAB_SINGLE_NODE=1 is the one exception,
-# see control-plane.sh).
+# Installs the clusterdrill appliance onto an already-bootstrapped cluster via
+# its published Helm chart. Run on the control-plane node only, by run.sh,
+# only when CLUSTERDRILL_DEPLOY=1 (see run.sh's own "Deploying the
+# clusterdrill appliance" stage) and only after control-plane.sh has finished
+# and every worker.sh has completed - the Deployment this creates has no
+# toleration for the control-plane's own NoSchedule taint, so it can only
+# schedule once at least one worker node has actually joined
+# (CLUSTERDRILL_LAB_SINGLE_NODE=1 is the one exception, see control-plane.sh).
 set -euo pipefail
 
-# See node-common.sh's own identical preamble comment for why this is
-# SCRIPT_DIR-relative rather than a fixed repo-relative path, and run.sh's
-# "scp -r ... /tmp/lib" comment for the other half of this coupling.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=bootstrap/lib/os-family.sh
-source "${SCRIPT_DIR}/lib/os-family.sh"
-OS_FAMILY="$(detect_os_family)"
-# shellcheck disable=SC1090 # dynamic path, resolved to one of this
-# directory's own lib/{debian,rhel}.sh at runtime - see os-family.sh.
-source "${SCRIPT_DIR}/lib/${OS_FAMILY}.sh"
-
-if [ $# -gt 2 ]; then
-  echo "usage: $0 [github-token-file] [app-repo-override]" >&2
+if [ $# -gt 0 ]; then
+  echo "usage: $0" >&2
   exit 1
 fi
-GITHUB_TOKEN_FILE="${1:-}"
 
-# The published clusterdrill application version this bootstrap installs,
-# and the GitHub repository its release lives in. CLUSTERDRILL_APP_REPO
-# defaults to the real, eventual standalone application repository - not
-# whatever private staging repository this lab candidate happens to be
-# developed inside today (see ../README.md's "Not for production use" and
-# the app repository's own README "Release policy" section for why a
-# fixed default here would otherwise go stale the moment either repository
-# is actually extracted). $2 overrides it - a plain argument, not an
-# environment variable, since it isn't sensitive and a `sudo` invocation
-# of this script (as CI uses) does not reliably pass environment variables
-# through by default.
-CLUSTERDRILL_BOOTSTRAP_VERSION="0.1.0"
-CLUSTERDRILL_APP_REPO="${2:-onahFran6/clusterdrill}"
+# The published clusterdrill chart version this bootstrap installs - the
+# authoritative pin is compatibility.json's app.version, and
+# check_compatibility_contract.sh enforces that the two never silently drift
+# apart. The chart itself already carries this release's real image
+# repository/digest as its own values.yaml default - nothing here resolves
+# or passes an image reference. See compatibility.json's app.chart_repository
+# for where this version is actually published.
+CLUSTERDRILL_VERSION="0.1.6"
+CLUSTERDRILL_CHART="oci://registry-1.docker.io/w00dson/clusterdrill-chart"
+CLUSTERDRILL_NAMESPACE="clusterdrill-system"
+CLUSTERDRILL_SECRET="clusterdrill-web-auth"
 
-echo "control-plane: installing the clusterdrill package (v${CLUSTERDRILL_BOOTSTRAP_VERSION})"
-# The clusterdrill package requires Python >= 3.11 (pyproject.toml's
-# requires-python) - os_install_appliance_python_deps handles getting a
-# >= 3.11 interpreter and pipx in place (the exact mechanism is family- and
-# even distro-specific, see lib/debian.sh and lib/rhel.sh) and exports
-# CLUSTERDRILL_PYTHON_BIN, the interpreter name to hand pipx below - never
-# hardcode "python3.11" here, it is not a safe assumption across every
-# supported OS family.
-os_install_appliance_python_deps
+echo "control-plane: deploying the clusterdrill appliance (chart v${CLUSTERDRILL_VERSION})"
 
-# No clusterdrill package is published to PyPI (see the app repository's own
-# README "Release policy" section) - the published GitHub Release's wheel
-# asset is the only real install source today. The plain release-download
-# URL is what this becomes with zero code change once the app repository
-# itself is public; while it's still private, that URL 404s and this falls
-# back to the GitHub API, authenticated with the token at GITHUB_TOKEN_FILE
-# if one was supplied. Reading the token from a file (the same convention
-# run.sh already uses for the SSH private key - a path, never a value)
-# keeps it out of every process's command-line arguments and environment
-# on both ends of the SSH connection, not just this remote one.
-CLUSTERDRILL_WHEEL="clusterdrill-${CLUSTERDRILL_BOOTSTRAP_VERSION}-py3-none-any.whl"
-WHEEL_PATH="/tmp/${CLUSTERDRILL_WHEEL}"
-PUBLIC_URL="https://github.com/${CLUSTERDRILL_APP_REPO}/releases/download/v${CLUSTERDRILL_BOOTSTRAP_VERSION}/${CLUSTERDRILL_WHEEL}"
+if ! kubectl get namespace "$CLUSTERDRILL_NAMESPACE" >/dev/null 2>&1; then
+  kubectl create namespace "$CLUSTERDRILL_NAMESPACE"
+fi
 
-if curl -fsSL --output "$WHEEL_PATH" "$PUBLIC_URL" 2>/dev/null; then
-  echo "control-plane: fetched ${CLUSTERDRILL_WHEEL} via the public release URL"
-elif [ -n "$GITHUB_TOKEN_FILE" ] && [ -f "$GITHUB_TOKEN_FILE" ]; then
-  echo "control-plane: public release fetch failed (the app repository is still private) - trying the GitHub API with the supplied token"
-  # Cleaned up on every exit path (including the early-return failure
-  # below), not just the success path.
-  trap 'rm -f "$GITHUB_TOKEN_FILE"' EXIT
-  GITHUB_TOKEN="$(cat "$GITHUB_TOKEN_FILE")"
-  ASSET_ID="$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
-    "https://api.github.com/repos/${CLUSTERDRILL_APP_REPO}/releases/tags/v${CLUSTERDRILL_BOOTSTRAP_VERSION}" \
-    | python3 -c "import json,sys; a=[x for x in json.load(sys.stdin)['assets'] if x['name']=='${CLUSTERDRILL_WHEEL}']; print(a[0]['id'] if a else '')")"
-  if [ -z "$ASSET_ID" ]; then
-    echo "control-plane: could not find release asset ${CLUSTERDRILL_WHEEL} on v${CLUSTERDRILL_BOOTSTRAP_VERSION} - check the token can read ${CLUSTERDRILL_APP_REPO}" >&2
-    exit 1
-  fi
-  curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/octet-stream" \
-    "https://api.github.com/repos/${CLUSTERDRILL_APP_REPO}/releases/assets/${ASSET_ID}" \
-    -o "$WHEEL_PATH"
-  unset GITHUB_TOKEN
+# The chart never generates or accepts a password value itself - only ever a
+# reference (auth.existingSecretName) to a Secret that must already exist.
+# Idempotent: a re-run against a lab that already has this Secret (e.g.
+# resuming after a later step failed) reuses it rather than rotating the
+# password out from under an operator who already has it.
+if kubectl -n "$CLUSTERDRILL_NAMESPACE" get secret "$CLUSTERDRILL_SECRET" >/dev/null 2>&1; then
+  echo "control-plane: reusing the existing ${CLUSTERDRILL_SECRET} secret"
+  PASSWORD_PRINTED=0
 else
-  echo "control-plane: could not fetch ${CLUSTERDRILL_WHEEL} - the app repository is still private and no readable token file was supplied. Pass a GitHub token file as run.sh's third argument, or wait until that repository is public." >&2
-  exit 1
+  PASSWORD="$(openssl rand -base64 24 | tr -d '=+/')"
+  kubectl -n "$CLUSTERDRILL_NAMESPACE" create secret generic "$CLUSTERDRILL_SECRET" \
+    --from-literal=password="$PASSWORD"
+  PASSWORD_PRINTED=1
 fi
 
-pipx install --python "$CLUSTERDRILL_PYTHON_BIN" "$WHEEL_PATH"
-
-echo "control-plane: deploying the appliance"
-# pipx installs into its own isolated venv, not system python3 - ask pipx
-# itself where that venv lives (PIPX_LOCAL_VENVS) rather than hardcode a
-# path, since that has changed across pipx versions. Within it, find
-# whichever python* interpreter actually exists rather than assume a
-# fixed name - not guaranteed given the explicit --python above.
-PIPX_LOCAL_VENVS="$(pipx environment | sed -n 's/^PIPX_LOCAL_VENVS=//p')"
-if [ -z "$PIPX_LOCAL_VENVS" ]; then
-  echo "control-plane: could not determine PIPX_LOCAL_VENVS from 'pipx environment'" >&2
-  pipx environment >&2 || true
-  exit 1
-fi
-PIPX_VENV_BIN="${PIPX_LOCAL_VENVS}/clusterdrill/bin"
-# `|| true`: compgen exits non-zero when nothing matches, which would
-# otherwise abort the script right here under `set -e`, before the
-# friendly error message below ever runs.
-PIPX_PY="$(compgen -G "${PIPX_VENV_BIN}/python*" | sort | head -1 || true)"
-if [ -z "$PIPX_PY" ]; then
-  echo "control-plane: no python* interpreter found in ${PIPX_VENV_BIN}" >&2
-  ls -la "$PIPX_VENV_BIN" >&2 || echo "control-plane: ${PIPX_VENV_BIN} does not exist" >&2
-  exit 1
-fi
-MANIFEST_PATH="$("$PIPX_PY" -c 'import clusterdrill.cli as m; print(m.MANIFEST)')"
-# Same resolution local_install() uses without --image: the release digest
-# paired with the installed package version, or the clusterdrill:dev
-# fallback - which won't exist on this remote node (nothing here builds an
-# image from source). The app repository's own release_manifest.json pins
-# v0.1.0 to an image published early in that project's history, before
-# several naming/architecture changes landed - this deploys that same
-# known-stale image, a real, honest limitation of this script, not a bug
-# in it - see ../README.md's "Known limitations".
-IMAGE="$("$PIPX_PY" -c 'from clusterdrill.release import resolve_default_image; print(resolve_default_image())')"
-VERSION="$("$PIPX_PY" -c 'from clusterdrill.release import installed_version; print(installed_version() or "dev")')"
-PASSWORD="$(openssl rand -base64 24 | tr -d '=+/')"
-sed \
-  -e "s#\${CLUSTERDRILL_IMAGE}#${IMAGE}#g" \
-  -e "s#\${CLUSTERDRILL_PASSWORD}#${PASSWORD}#g" \
-  -e "s#\${CLUSTERDRILL_VERSION}#${VERSION}#g" \
-  "$MANIFEST_PATH" | kubectl apply -f -
-
-# The app repository's own manifest deliberately makes this Service
-# ClusterIP - it's written for `clusterdrill local install`'s Minikube
-# workflow, reached via `clusterdrill local url`'s tunnel, and its own
-# comment warns against exposing it over a node network. This lab has no
-# local-tunnel equivalent - the operator is SSH'd into a remote VM with no
-# browser on the other end of that tunnel - so this patches it to NodePort
-# specifically for that remote-VM access model, rather than changing the
-# app's own local-install default.
-kubectl -n clusterdrill-system patch svc clusterdrill -p '{"spec":{"type":"NodePort"}}'
+# No --set image.* flags - the published chart already has this version's
+# real image repository/digest baked in as its own default (see
+# compatibility.json's $comment and the chart's own README "Install"
+# section). --wait is deliberately not used here: this repo's other
+# bootstrap scripts wait on the rollout explicitly afterward instead, so a
+# timeout produces the same "waiting for the appliance" message either way,
+# not a different helm-specific one.
+helm upgrade --install clusterdrill "$CLUSTERDRILL_CHART" \
+  --version "$CLUSTERDRILL_VERSION" \
+  --namespace "$CLUSTERDRILL_NAMESPACE" \
+  --set auth.existingSecretName="$CLUSTERDRILL_SECRET"
 
 echo "control-plane: waiting for the appliance to become ready"
-kubectl -n clusterdrill-system rollout status deployment/clusterdrill-web --timeout=5m
+kubectl -n "$CLUSTERDRILL_NAMESPACE" rollout status deployment/clusterdrill-web --timeout=5m
 
 echo "control-plane: done"
-echo "Login password: ${PASSWORD}"
-echo "The appliance is reachable via a NodePort - see your provider module's own README for how to reach it from your machine."
+if [ "$PASSWORD_PRINTED" -eq 1 ]; then
+  echo "Login password: ${PASSWORD}"
+else
+  echo "Login password: unchanged - already set in the ${CLUSTERDRILL_SECRET} secret from a previous run"
+fi
+echo "The appliance is reachable via a NodePort (the chart's own default) - see your provider module's own README for how to reach it from your machine."

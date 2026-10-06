@@ -23,10 +23,10 @@ A disposable, provider-pluggable Kubernetes lab that provisions a cluster and in
 ## Overview
 
 Terraform provisions the VMs. A cloud-agnostic bootstrap then installs Kubernetes (kubeadm,
-containerd, Cilium) and the `clusterdrill` CKAD practice-bank appliance on top. Every root module
-under `providers/` hands the bootstrap the same four values, so swapping clouds never touches
-`bootstrap/`'s own code. Written clean-room against public documentation only - no code or text
-from any private or course-provided source.
+containerd, Cilium) and, opt-in, the `clusterdrill` CKAD practice-bank appliance on top - see
+[Quick start](#quick-start). Every root module under `providers/` hands the bootstrap the same four
+values, so swapping clouds never touches `bootstrap/`'s own code. Written clean-room against public
+documentation only - no code or text from any private or course-provided source.
 
 ## Supported providers
 
@@ -42,9 +42,10 @@ root module today.
 
 This lab exists to run [`clusterdrill`](https://github.com/onahFran6/clusterdrill): the CKAD
 question set, grading CLI, appliance image, and Helm chart. This repository only provisions the
-infrastructure and installs a pinned release on top (see [`compatibility.json`](compatibility.json)
-for the exact version). The question set and grading logic live in the `clusterdrill` repository
-itself, along with a Minikube-based local-install path for running it without a cloud lab at all.
+infrastructure and, if you opt in, installs a pinned release on top (see
+[`compatibility.json`](compatibility.json) for the exact version). The question set and grading
+logic live in the `clusterdrill` repository itself, along with a Minikube-based local-install path
+for running it without a cloud lab at all.
 
 ## Structure
 
@@ -104,9 +105,18 @@ cd ../../bootstrap
 ./run.sh outputs.json ~/.ssh/id_ed25519   # private key paired with ssh_public_key above
 ```
 
-`run.sh` prints a login password near the end - see
+This gives you a bare, working Kubernetes cluster with no `clusterdrill` footprint at all - just
+Kubernetes, Cilium, and the Headlamp dashboard. **Set `CLUSTERDRILL_DEPLOY=1` to also have the
+`clusterdrill` appliance installed into the cluster:**
+
+```sh
+CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
+`run.sh` prints a login password near the end when `CLUSTERDRILL_DEPLOY=1` - see
 [Verifying the lab](providers/aws/README.md#verifying-the-lab) for the appliance URL and next
-steps.
+steps. Bring just the appliance back down later, independent of the rest of the lab, with
+`helm uninstall clusterdrill --namespace clusterdrill-system` on the control-plane node.
 
 ## Dashboard
 

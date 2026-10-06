@@ -1,0 +1,98 @@
+name: PR conflict check
+
+# Flags a PR that can't be cleanly merged into main - detection only, never
+# attempts to resolve anything itself (see MAINTAINING.md/CONTRIBUTING.md
+# for how conflicts actually get resolved: a human, or an agent working
+# through the actual concerns, merges main into the branch and picks the
+# right side of each hunk by hand - not something safe to automate blindly,
+# since a real resolution needs to know which side of a conflict is still
+# accurate, not just which one is "ours").
+#
+# GitHub's own PR UI already shows this in the merge box, but that's easy
+# to miss in a wall of other green/red checks, and every other job in
+# lab-quality-gate.yml needs a clean merge to even run against - this makes
+# a real conflict an explicit, unmissable, *failing* check instead.
+#
+# Third-party Actions below are pinned to a full commit SHA, not a mutable
+# tag - the trailing `# vX` comment is only a human-readable label. To bump
+# one: `gh api repos/<owner>/<repo>/git/refs/tags/<new-tag> --jq .object.sha`.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-mergeable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check mergeability and comment if conflicting
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const MARKER = "<!-- pr-conflict-check -->";
+
+            // GitHub computes `mergeable` asynchronously after a push - it's
+            // often still `null` ("unknown") for a few seconds right when
+            // this workflow starts. Poll a handful of times rather than
+            // trusting whatever the first response says, so a fresh push
+            // doesn't get misreported as conflict-free just because GitHub
+            // hadn't finished computing it yet.
+            let pr;
+            for (let attempt = 0; attempt < 5; attempt++) {
+              const { data } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+              });
+              pr = data;
+              if (pr.mergeable !== null) break;
+              await new Promise((r) => setTimeout(r, 4000));
+            }
+
+            if (pr.mergeable === null) {
+              core.warning("GitHub had not finished computing mergeability after 5 attempts - skipping this run, a later push/re-run will re-check.");
+              return;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const existing = comments.find((c) => c.body.includes(MARKER));
+
+            if (pr.mergeable === false) {
+              const body = `${MARKER}\n**This PR has a merge conflict with \`main\`** and can't be merged as-is.\n\nResolve it with a real merge (not a force-push rebase, unless you've already discussed rewriting this branch's history): \`git fetch origin main && git merge origin/main\`, fix each conflicted hunk by hand - picking whichever side is still accurate, not just "ours" - then push. This check re-runs automatically on the next push.`;
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  body,
+                });
+              }
+              core.setFailed("This PR conflicts with main - see the comment above for how to resolve it.");
+            } else if (existing) {
+              // Conflict existed on an earlier push and has since been
+              // resolved - update the marker comment to say so instead of
+              // leaving a stale "this conflicts" comment sitting on a PR
+              // that no longer does.
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: `${MARKER}\nConflict resolved as of the latest push - this PR merges cleanly into \`main\` now.`,
+              });
+            }

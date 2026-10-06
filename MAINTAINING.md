@@ -90,8 +90,9 @@ Conventional Commits drive the version forward normally.
 ## Version-bump runbook
 
 This is the full checklist for bumping any pinned dependency - a
-Kubernetes minor, Cilium, Ubuntu LTS release, or the `hashicorp/aws`
-provider constraint. Every piece here was previously tribal knowledge
+Kubernetes minor, Cilium, Ubuntu LTS release, the `hashicorp/aws`
+provider constraint, or the `clusterdrill` app/chart version. Every piece
+here was previously tribal knowledge
 scattered across `compatibility.json`'s own `$comment`,
 `bootstrap/check_compatibility_contract.sh`, and
 `providers/aws/README.md`'s Patch/upgrade section - this is the one place
@@ -111,6 +112,14 @@ that connects them end-to-end.
      resulting `.terraform.lock.hcl` diff (Dependabot proposes this pin
      bump automatically - see below - but the lock file update is the
      same either way).
+   - `clusterdrill` app/chart version: `CLUSTERDRILL_VERSION` in
+     [`bootstrap/deploy-appliance.sh`](bootstrap/deploy-appliance.sh) -
+     the version of the published `oci://registry-1.docker.io/w00dson/clusterdrill-chart`
+     this lab installs (opt-in, via `CLUSTERDRILL_DEPLOY=1`). Confirm the
+     target version is actually published first
+     (`helm show chart oci://registry-1.docker.io/w00dson/clusterdrill-chart --version <version>`)
+     - this lab deliberately never resolves "latest" at install time, the
+       same reasoning as every other pin in this list.
 2. **Update `compatibility.json`.** Its own `$comment` field says this
    explicitly: this file and the pins above must change together in the
    same commit, never drift apart. Run
