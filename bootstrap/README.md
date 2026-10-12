@@ -19,8 +19,9 @@ cluster by hand without running any of these scripts, see
 1. A `providers/<cloud>/` module provisions the nodes (`terraform apply`).
 2. `run.sh` reads that module's Terraform outputs and, over SSH:
    - Runs [`node-common.sh`](node-common.sh) on every node (disables
-     swap, installs containerd, kubelet, kubeadm, kubectl, plus `helm`
-     and `kustomize` for the operator's own CKAD practice use - see
+     swap, installs containerd, kubelet, kubeadm, kubectl, plus `helm`,
+     `kustomize`, `podman`/`podman-docker`, and the `k` alias + kubectl
+     completion, for the operator's own CKAD practice use - see
      [`lib/practice-tools.sh`](lib/practice-tools.sh)).
      The containerd/kube-package install steps dispatch on OS family
      ([`lib/os-family.sh`](lib/os-family.sh) detects Debian- vs
@@ -50,6 +51,14 @@ cluster by hand without running any of these scripts, see
      (`../dashboard/headlamp-manifest.yaml`) - same ordering constraint
      as the appliance above, but always runs regardless of
      `CLUSTERDRILL_DEPLOY`.
+   - Once every worker has joined, and only if `PRACTICE_GUI_DEPLOY=1`
+     is set (see below), runs
+     [`deploy-practice-gui.sh`](deploy-practice-gui.sh) on every worker
+     node to set up a minimal practice desktop (XFCE, a terminal,
+     Firefox) reachable over noVNC in a plain browser - see
+     [`docs/BOOTSTRAP-DEEPDIVE.md`](../docs/BOOTSTRAP-DEEPDIVE.md) for
+     why a browser-delivered remote desktop, not a local one, is the
+     point.
 
 ```sh
 terraform -chdir=../providers/aws output -json > outputs.json
@@ -73,6 +82,16 @@ ssh -i ~/.ssh/id_ed25519 <ssh-user>@<control-plane-ip> \
   helm uninstall clusterdrill --namespace clusterdrill-system
 ```
 
+Set `PRACTICE_GUI_DEPLOY=1` to also have a practice desktop set up on every
+worker node - see
+[`providers/aws/README.md`](../providers/aws/README.md#practice-gui-opt-in-desktop)
+for the noVNC URL, the sizing recommendation, and the plaintext-over-6080
+caveat before you turn this on:
+
+```sh
+PRACTICE_GUI_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
+
 ### What `run.sh` prints when it finishes
 
 A successful run's last lines are everything you need to actually use the lab - no need to go
@@ -94,7 +113,9 @@ has no equivalent line here yet - `run.sh` doesn't print its NodePort today, onl
 password when `CLUSTERDRILL_DEPLOY=1` (from `deploy-appliance.sh`'s own output, earlier in the
 same run) - see
 `providers/aws/README.md`'s ["Verifying the lab"](../providers/aws/README.md#verifying-the-lab)
-section for how to find and reach it in the meantime.
+section for how to find and reach it in the meantime. When `PRACTICE_GUI_DEPLOY=1`, `run.sh` also
+prints each worker's noVNC URL at the very end - the VNC password itself was already printed
+earlier in the same run, by `deploy-practice-gui.sh`.
 
 `../compatibility.json` is the machine-readable contract between this lab,
 the `clusterdrill` application release it installs, and the Headlamp
@@ -108,6 +129,14 @@ them.
 
 ## Known limitations
 
+- **`deploy-practice-gui.sh` has no real CI coverage.** The existing
+  `app-lab-compatibility-e2e` job could verify packages install and that
+  `practice-vnc.service`/`practice-novnc.service` bind their expected
+  ports, but there's no headless way in CI to confirm the desktop actually
+  renders - that gap is left open, not silently skipped. It's also
+  Debian/Ubuntu-only by design (plain `apt-get`, no `lib/os-family.sh`
+  dispatch) - see the script's own header comment for why a RHEL-family
+  path isn't planned here.
 - **The deployed appliance version is a deliberate pin, not always
   "latest."** `deploy-appliance.sh`'s `CLUSTERDRILL_VERSION` (kept in sync
   with `compatibility.json`'s `app.version` by
