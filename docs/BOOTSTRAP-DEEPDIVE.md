@@ -24,20 +24,26 @@ architecture-overview work, issue #170). This doc picks up one level down: the i
 1. `node-common.sh` on **every** node (control-plane and workers alike).
 2. `control-plane.sh` on the control-plane node only.
 3. `worker.sh` on every worker node, once `control-plane.sh` has finished.
-4. `deploy-appliance.sh` on the control-plane node, only after **every** worker has joined, and
+4. `deploy-practice-gui.sh` on every worker node, once it has joined, and only if the operator set
+   `PRACTICE_GUI_DEPLOY=1` - see `run.sh`'s own usage comment. Unset, `run.sh` skips this step
+   entirely.
+5. `deploy-appliance.sh` on the control-plane node, only after **every** worker has joined, and
    only if the operator set `CLUSTERDRILL_DEPLOY=1` - see `run.sh`'s own usage comment. Unset,
-   `run.sh` skips this step entirely and step 3 hands off straight to step 5.
-5. `deploy-headlamp.sh` on the control-plane node, right after step 4 (whether or not step 4 ran).
+   `run.sh` skips this step entirely and step 3 hands off straight to step 6.
+6. `deploy-headlamp.sh` on the control-plane node, right after step 5 (whether or not step 5 ran).
 
-Steps 4 and 5 are separate scripts run *after* every worker joins, not folded into
+Steps 5 and 6 are separate scripts run *after* every worker joins, not folded into
 `control-plane.sh`, because both Deployments they create have no toleration for the
 control-plane's own `NoSchedule` taint. In a real multi-node lab, either Deployment can only
 schedule once a worker node actually exists to run on it - running them any earlier would just
 hang until `kubectl rollout status`'s own timeout and fail. `bootstrap/README.md`'s "Flow" section
 and `run.sh`'s own comments document this same reasoning; it's restated here because it's the key
-fact that explains why this is five scripts instead of three. Step 4 is additionally the one
-opt-in step in this whole flow - deploying `clusterdrill` into the lab cluster is a deliberate
-operator choice, not a default side effect of bringing the cluster up.
+fact that explains why this is six scripts instead of three. Step 4 has a different, simpler
+reason for waiting on the worker join rather than running inside `node-common.sh` itself: it needs
+the control-plane's kubeconfig (so `kubectl` works inside the practice desktop), which only exists
+once `control-plane.sh` has run - nothing about Kubernetes scheduling or taints is involved, unlike
+steps 5 and 6. Steps 4 and 5 are both opt-in - deploying a practice desktop or the `clusterdrill`
+appliance are deliberate operator choices, not a default side effect of bringing the cluster up.
 
 The rest of this doc walks through what each step actually does, in the same order.
 
@@ -110,6 +116,23 @@ community-contributed, not the project's own method), so both install the exact 
 regardless of distro - a pinned-version release tarball for the node's own architecture (`amd64`
 or `arm64`), verified against its published SHA256 checksum before anything is extracted, then
 installed to `/usr/local/bin`.
+
+**`podman` and `podman-docker` are installed the same way, for CKAD's "build container images"
+objective - deliberately not a real Docker Engine.** `docker.io`/`docker-ce` both want to own the
+same `containerd` package and `/etc/containerd/config.toml` that was just configured above with
+`SystemdCgroup = true` specifically so kubelet reports `Ready` - installing a second thing that
+wants to manage that same file/daemon is a real way to silently break the node, the same class of
+bug the `SystemdCgroup` fix above exists to prevent in the first place. `podman-docker` sidesteps
+this entirely: it's a `docker` CLI wrapper backed by Podman's own separate, daemonless runtime
+(`/etc/containers/*`, nothing under `/etc/containerd/`), so `docker build`/`docker run`/`docker
+images` all work for the operator's own practice without containerd or kubelet ever noticing it's
+there. Both packages install straight from Ubuntu's own universe repo - no third-party repo
+needed, unlike Helm/Kustomize above.
+
+Last, **a `k` alias and kubectl bash completion are appended to `~/.bashrc`** - kubectl's own
+documented setup from its "kubectl Cheat Sheet", not something specific to this lab. Wired up for
+the `k` alias too (`complete -o default -F __start_kubectl k`), not just plain `kubectl`, so
+tab-completion works the shorter way the real exam environment's own practice encourages.
 Nothing else in this project uses either tool: Headlamp still deploys via a static manifest rather
 than its own upstream Helm chart, for the RBAC-scoping reason covered in this doc's Headlamp
 section below, and that decision is unrelated to and unchanged by this step.
@@ -243,9 +266,62 @@ node that already joined (same class of "port already in use" errors), so `worke
 `/etc/kubernetes/kubelet.conf` (written only once `kubeadm join` actually succeeds) and skips
 straight to done if it's already there.
 
-Once every worker has joined, `run.sh` moves on to the two Deployments that were waiting for this.
+Once every worker has joined, `run.sh` moves on to the practice GUI (if opted in) and then the two
+Deployments that were waiting for this.
 
-## 5. Appliance install (`deploy-appliance.sh`)
+## 5. Practice GUI install (`deploy-practice-gui.sh`)
+
+Run on each worker node, by `run.sh`, only when the operator set `PRACTICE_GUI_DEPLOY=1` and only
+after that worker's own `worker.sh` has completed. Unlike the appliance and dashboard below, this
+step has nothing to do with Kubernetes scheduling or taints - it configures the worker VM itself
+(packages, systemd units, a desktop session), not a Deployment inside the cluster.
+
+At a high level: `apt-get install` XFCE, a terminal emulator, TigerVNC, and noVNC/websockify;
+install Firefox separately, from Mozilla's own apt repo rather than Ubuntu's plain `firefox`
+package - that package is just a transitional stub that triggers a snap install, and snap's own
+confinement model requires a `systemd-logind` login session to set up the cgroup it expects, which
+a `vncserver` session never creates (no display manager, no PAM session). The snap refuses to
+start at all in that case (`is not a snap cgroup for tag snap.firefox.firefox`) - found by hitting
+exactly this on a real run, not in theory: the desktop icon was there, double-clicking did
+nothing, no error dialog either, because `snap-confine` fails before Firefox's own code ever runs.
+Mozilla's repo ships a real, non-snap binary with no such confinement, specifically to sidestep
+this exact class of problem (their own install docs say so directly); `--allow-downgrades` is
+needed alongside it, since Ubuntu's transitional stub carries an inflated epoch (`1:1snap1-...`)
+specifically to make a plain `apt install firefox` keep preferring it over a real package of the
+same name. A desktop icon (`~/Desktop/firefox.desktop`, copied from the real package's own
+`/usr/share/applications/firefox.desktop`) is added on top of whatever XFCE's own Applications
+menu shows, since that menu goes through `exo`'s separate helper-detection layer
+(`~/.config/xfce4/helpers.rc`) - one more layer of indirection a VNC-launched session doesn't
+reliably exercise the same way a real desktop login does. Then generate a VNC password with
+`vncpasswd -f` (skipped, idempotently, if a later re-run finds one already set); write a
+`~/.vnc/xstartup` that exports `XDG_DATA_DIRS` (so any snap-packaged app's own desktop file would
+still be visible in the menu, even though Firefox itself no longer needs this) and execs
+`startxfce4`; then install and (re)start two systemd units:
+
+- `practice-vnc.service` - `vncserver :1 -localhost yes -geometry 1280x800`. `-localhost yes`
+  binds the VNC server itself to `127.0.0.1` only, so it is never directly reachable from outside
+  the node.
+- `practice-novnc.service` - `websockify --web /usr/share/novnc 6080 localhost:5901`, proxying
+  noVNC's own static web UI and the websocket bridge to the VNC server above through a single
+  port. This is the only port the security group actually opens for this feature
+  (`providers/aws/main.tf`'s `practice_gui` rule) - see
+  [`providers/aws/README.md`](../providers/aws/README.md#practice-gui-opt-in-desktop) for the URL
+  and the plaintext-over-6080 caveat.
+
+**kubectl access inside the desktop.** `run.sh` copies the control-plane's own `~/.kube/config`
+(already written there by `control-plane.sh`, step 2) to each GUI-enabled worker's `/tmp/admin.conf`
+before invoking this script, the same local-bounce pattern it already uses for
+`/tmp/kubeadm-join-command.sh`. `deploy-practice-gui.sh` then copies that file to
+`$HOME/.kube/config` for the SSH user - without this, a terminal inside the practice desktop
+couldn't run `kubectl` at all, which would defeat the point: the real exam environment comes with
+`kubectl` already pointed at the cluster under test.
+
+**Why a browser-delivered remote desktop at all.** The real PSI/Linux Foundation CKAD exam is
+itself a remote desktop delivered in your browser, not a terminal on your own laptop - practicing
+locally skips the exact latency and control feel worth rehearsing. noVNC's browser-only access
+(no VNC client app to install) is the closest match to that delivery mechanism available here.
+
+## 6. Appliance install (`deploy-appliance.sh`)
 
 Run on the control-plane node, by `run.sh`, only when the operator set `CLUSTERDRILL_DEPLOY=1` and
 only after every `worker.sh` invocation has completed - see
@@ -294,7 +370,7 @@ invoked after every worker join completes, rather than the tail end of `control-
 the context of running the automation; this is the same fact, explained here for someone building
 the sequence by hand.
 
-## 6. Dashboard install (`deploy-headlamp.sh`)
+## 7. Dashboard install (`deploy-headlamp.sh`)
 
 Run immediately after the appliance, for the same reason and under the same constraint: the
 Headlamp Deployment also carries no toleration for the control-plane's `NoSchedule` taint, so it

@@ -55,5 +55,7 @@ os_install_kube_packages "$KUBERNETES_MINOR"
 
 install_helm
 install_kustomize
+install_container_tools
+setup_kubectl_shortcuts
 
 echo "node-common: done"

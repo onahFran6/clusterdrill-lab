@@ -118,6 +118,12 @@ CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
 steps. Bring just the appliance back down later, independent of the rest of the lab, with
 `helm uninstall clusterdrill --namespace clusterdrill-system` on the control-plane node.
 
+Set `PRACTICE_GUI_DEPLOY=1` to also have a minimal practice desktop (XFCE, a terminal, Firefox)
+set up on every worker, reachable over noVNC in a plain browser - the closest match to how the
+real CKAD exam itself delivers a remote desktop. See
+[`providers/aws/README.md`'s Practice GUI section](providers/aws/README.md#practice-gui-opt-in-desktop)
+before you turn this on.
+
 ## Dashboard
 
 Every lab includes a [Headlamp](https://github.com/kubernetes-sigs/headlamp) web dashboard,

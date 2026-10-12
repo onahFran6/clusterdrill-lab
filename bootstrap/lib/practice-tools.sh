@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Installs the Helm and Kustomize CLI binaries for the operator's own CKAD
-# practice use - nothing in bootstrap/ itself uses either tool internally
-# (see ../../docs/BOOTSTRAP-DEEPDIVE.md's note on why Headlamp deploys via a
-# static manifest, not its own upstream Helm chart; that decision is
-# unrelated to and unchanged by this file).
+# Installs the Helm and Kustomize CLI binaries, and sets up kubectl's own
+# documented `k` alias + bash completion, for the operator's own CKAD
+# practice use - nothing in bootstrap/ itself uses either tool internally,
+# or the alias, (see ../../docs/BOOTSTRAP-DEEPDIVE.md's note on why
+# Headlamp deploys via a static manifest, not its own upstream Helm chart;
+# that decision is unrelated to and unchanged by this file).
 #
 # Deliberately NOT part of the os_install_* os-family dispatch contract
 # (os-family.sh, debian.sh, rhel.sh) - neither tool has an officially-blessed
@@ -132,4 +133,62 @@ install_kustomize() {
   sudo install -m 0755 "${workdir}/kustomize" /usr/local/bin/kustomize
   rm -rf "$workdir"
   trap - EXIT
+}
+
+# kubectl's own documented setup (kubernetes.io's "kubectl Cheat Sheet"), not
+# specific to this lab: bash completion, a `k` alias, and completion wired up
+# for that alias too - every real CKAD exam environment and most working
+# Kubernetes operators set this up by hand, so doing it here saves the
+# operator from retyping `kubectl` in full throughout their own practice.
+# Appended to ~/.bashrc (the file an interactive non-login bash shell
+# actually sources - what both an SSH session and a practice-GUI terminal
+# both are), guarded so a re-run never appends a second copy.
+setup_kubectl_shortcuts() {
+  local bashrc="${HOME}/.bashrc"
+  if grep -q '^source <(kubectl completion bash)$' "$bashrc" 2>/dev/null; then
+    echo "node-common: kubectl shortcuts already configured in ${bashrc}, skipping"
+    return
+  fi
+
+  echo "node-common: adding the k alias + kubectl completion to ${bashrc}"
+  cat >> "$bashrc" <<'EOF'
+
+# CKAD practice shortcuts - kubectl's own documented setup, not specific to
+# this lab (kubernetes.io's "kubectl Cheat Sheet").
+source <(kubectl completion bash)
+alias k=kubectl
+complete -o default -F __start_kubectl k
+EOF
+}
+
+# `docker`/`podman` for the operator's own practice with CKAD's "build
+# container images" objective - nothing in bootstrap/ itself builds an
+# image anywhere, this is purely for the operator's own practice use, same
+# category as install_helm/install_kustomize above.
+#
+# Deliberately `podman` + `podman-docker`, not a real Docker Engine
+# (`docker.io`/`docker-ce`): every Docker package shares (or, via
+# `docker-ce`'s own `containerd.io`, outright conflicts with) the same
+# `containerd` package and `/etc/containerd/config.toml` that
+# os_install_containerd above already configured with `SystemdCgroup =
+# true` specifically so kubelet reports Ready (see that function's own
+# comment for the exact failure mode) - installing a second thing that
+# wants to own that same file/daemon is a real way to silently break the
+# node. `podman-docker` sidesteps this entirely: it's a `docker` CLI
+# wrapper backed by Podman's own separate, daemonless, non-CRI runtime
+# (`/etc/containers/*`, nothing under `/etc/containerd/`) - `docker build`/
+# `docker run`/`docker images` all work, kubelet never notices it's there.
+install_container_tools() {
+  if command -v podman >/dev/null; then
+    echo "node-common: podman already installed, skipping"
+    return
+  fi
+
+  echo "node-common: installing podman + podman-docker (docker CLI backed by podman)"
+  sudo apt-get install -y -qq podman podman-docker
+  # podman-docker's own documented way to quiet its "Emulate Docker CLI
+  # using podman" notice, which otherwise prints on every single `docker`
+  # invocation - noise, not a warning worth seeing every time during
+  # practice.
+  sudo touch /etc/containers/nodocker
 }

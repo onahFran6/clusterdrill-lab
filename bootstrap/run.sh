@@ -13,6 +13,13 @@
 #   # at all. See deploy-appliance.sh and compatibility.json's app.version
 #   # for exactly what gets installed.
 #   CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+#
+#   # Also set up a practice desktop (XFCE, a terminal, Firefox) on every
+#   # worker node, reachable over noVNC in a browser - unset, no desktop is
+#   # installed at all. See deploy-practice-gui.sh for exactly what gets
+#   # installed; consider bumping worker_instance_type in your own
+#   # terraform.tfvars first, see providers/aws/README.md.
+#   PRACTICE_GUI_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +31,7 @@ fi
 OUTPUTS_FILE="$1"
 SSH_KEY="$2"
 CLUSTERDRILL_DEPLOY="${CLUSTERDRILL_DEPLOY:-}"
+PRACTICE_GUI_DEPLOY="${PRACTICE_GUI_DEPLOY:-}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "run.sh: jq is required (brew install jq / apt install jq)" >&2
@@ -49,11 +57,11 @@ fi
 
 SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 
-# Five stages the rest of this script always runs, in order, regardless of
+# Six stages the rest of this script always runs, in order, regardless of
 # worker_count - see docs/BOOTSTRAP-DEEPDIVE.md's "Order of operations".
 # Purely cosmetic bookkeeping (progress banners a human watching this run
 # can actually scan), not control flow.
-STAGE_TOTAL=5
+STAGE_TOTAL=6
 STAGE_NUM=0
 CURRENT_STAGE=""
 
@@ -165,6 +173,31 @@ done
 rm -f /tmp/kubeadm-join-command.sh
 stage_done
 
+# Explicit opt-in, not a default side effect of bringing the lab up - unset,
+# this stage is a no-op and no desktop is installed on any node at all. Set
+# PRACTICE_GUI_DEPLOY=1 (see this script's own usage comment at the top) to
+# have deploy-practice-gui.sh set up a practice desktop on every worker,
+# reachable over noVNC in a browser. Only needs the worker already joined
+# and the control-plane's own kubeconfig to exist, not clusterdrill or
+# Headlamp - run before both for that reason, not just because it comes
+# right after the join stage above.
+stage "Setting up the practice GUI"
+if [ "$PRACTICE_GUI_DEPLOY" = "1" ]; then
+  # Bounced through a local temp file the same way
+  # /tmp/kubeadm-join-command.sh is above: control-plane.sh already copies
+  # /etc/kubernetes/admin.conf to its own ~/.kube/config, so this reuses
+  # that instead of fetching the root-owned file a second way.
+  scp "${SSH_OPTS[@]}" -q "${SSH_USER}@${CONTROL_PLANE_IP}:.kube/config" /tmp/admin.conf
+  for host in "${WORKER_IPS[@]}"; do
+    scp "${SSH_OPTS[@]}" -q /tmp/admin.conf "${SSH_USER}@${host}:/tmp/admin.conf"
+    run_remote_script "$host" "${SCRIPT_DIR}/deploy-practice-gui.sh"
+  done
+  rm -f /tmp/admin.conf
+else
+  echo "run.sh: PRACTICE_GUI_DEPLOY is not set to 1 - skipping (see this script's usage comment)"
+fi
+stage_done
+
 # Deploying the appliance only after every worker has joined, not right
 # after control-plane.sh: its Deployment has no toleration for the
 # control-plane's own NoSchedule taint, so in a real multi-node lab it can
@@ -210,3 +243,11 @@ echo
 echo "Headlamp dashboard: http://${CONTROL_PLANE_IP}:${HEADLAMP_NODEPORT}"
 echo "  Log in with a bearer token (short-lived by design - generate one on demand):"
 echo "  ssh -i ${SSH_KEY} ${SSH_USER}@${CONTROL_PLANE_IP} kubectl create token headlamp -n headlamp-system --duration=8h"
+
+if [ "$PRACTICE_GUI_DEPLOY" = "1" ]; then
+  echo
+  echo "Practice GUI (noVNC) - open each in a browser, password printed earlier in this run:"
+  for host in "${WORKER_IPS[@]}"; do
+    echo "  http://${host}:6080/vnc.html"
+  done
+fi
