@@ -175,6 +175,20 @@ resource "aws_vpc_security_group_ingress_rule" "nodeport_range" {
   ip_protocol       = "tcp"
 }
 
+# Unconditional, like the three rules above - the real on/off switch for
+# this feature is PRACTICE_GUI_DEPLOY at bootstrap/run.sh time, not a
+# Terraform variable. See bootstrap/deploy-practice-gui.sh: VNC itself binds
+# to 127.0.0.1 only, so this port (noVNC/websockify) is the only one a
+# client ever reaches.
+resource "aws_vpc_security_group_ingress_rule" "practice_gui" {
+  security_group_id = aws_security_group.this.id
+  description       = "noVNC practice desktop (opt-in via PRACTICE_GUI_DEPLOY=1), from the operator"
+  cidr_ipv4         = var.allowed_ssh_cidr
+  from_port         = 6080
+  to_port           = 6080
+  ip_protocol       = "tcp"
+}
+
 # Every port between the lab's own nodes: pod-to-pod (Cilium VXLAN/Geneve),
 # kubelet (10250), etcd (2379-2380), and anything else kubeadm/Cilium need -
 # scoping this port-by-port would be brittle against future Cilium/kubeadm

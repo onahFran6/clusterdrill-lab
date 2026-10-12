@@ -51,7 +51,7 @@ Every variable in [`variables.tf`](variables.tf), what it defaults to, and why y
 | `cluster_name` | `clusterdrill-lab` | Give it a unique value to run more than one lab at once in the same account/region - it prefixes every resource name and tag. |
 | `worker_count` | `1` | Bump it for practice questions that assume more than one worker (must be >= 1). |
 | `control_plane_instance_type` | `t3.medium` | kubeadm's own minimum is 2 vCPU / 2 GiB; this is the tested default. |
-| `worker_instance_type` | `t3.medium` | Same, per worker. |
+| `worker_instance_type` | `t3.medium` | Same, per worker. If you enable the opt-in practice GUI (`PRACTICE_GUI_DEPLOY=1`, see below), its XFCE desktop and Firefox run on top of this same 4 GiB alongside kubelet/containerd/Cilium - comfortable for light use, but consider `t3.large` if you also run heavier browser workloads. |
 | `control_plane_architecture` | `amd64` | Set to `arm64` for a Graviton instance type (e.g. `t4g.medium`) - must match the actual architecture of `control_plane_instance_type`. |
 | `worker_architecture` | `amd64` | Same, for `worker_instance_type` - control-plane and workers may differ (a mixed-architecture lab is supported). |
 | `ssh_public_key` | none, required | Your own SSH public key - this module never generates or holds a private key. |
@@ -86,6 +86,14 @@ CLUSTERDRILL_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
 `run.sh` prints a login password near the end of its output when
 `CLUSTERDRILL_DEPLOY=1` - keep it, you'll need it for the appliance's web
 UI.
+
+Set `PRACTICE_GUI_DEPLOY=1` to also set up a practice desktop on every
+worker - see the [Practice GUI section](#practice-gui-opt-in-desktop) below
+before you turn this on:
+
+```sh
+PRACTICE_GUI_DEPLOY=1 ./run.sh outputs.json ~/.ssh/id_ed25519
+```
 
 ## Verifying the lab
 
@@ -131,6 +139,44 @@ from the node's private IP to `https://<control_plane_ip>:6443` - the
 public IP is already a valid SAN on the API server's certificate (see
 `control-plane.sh`'s `--apiserver-cert-extra-sans`), it's just not what
 kubeadm writes into the config by default.
+
+### Practice GUI (opt-in desktop)
+
+If you ran `run.sh` with `PRACTICE_GUI_DEPLOY=1`, every worker node also has a minimal XFCE
+desktop (a terminal and Firefox) reachable over [noVNC](https://github.com/novnc/noVNC) in a
+plain browser - no VNC client app to install. The point is realistic CKAD exam practice: the real
+PSI/Linux Foundation exam is itself delivered as a remote desktop in your browser, so practicing
+through one here gives you the same latency and control feel, instead of skipping it by running
+`kubectl` locally.
+
+Open `http://<worker_ip>:6080/vnc.html` in your browser and enter the VNC password - `run.sh`
+printed it earlier in the same run (from `deploy-practice-gui.sh`'s own output), or regenerate it
+later:
+
+```sh
+ssh -i ~/.ssh/id_ed25519 ubuntu@<worker_ip> 'rm ~/.vnc/passwd && vncpasswd'
+```
+
+`kubectl` already works inside the desktop's terminal - `deploy-practice-gui.sh` copies the
+control-plane's own kubeconfig there as part of setup, the same way `control-plane.sh` sets one up
+on the control-plane node itself.
+
+Two things worth knowing before you turn this on:
+
+- **Plaintext, not TLS.** noVNC/websockify traffic on port 6080 isn't encrypted - the same trust
+  model Headlamp's own NodePort already has in this lab: restricted to your own `/32` CIDR via the
+  security group, not encryption. Fine for a disposable practice lab reachable only from your own
+  IP; don't widen `allowed_ssh_cidr` and assume this is safe to leave open to the internet.
+- **Resource contention by construction.** The desktop runs on the same worker VM as
+  kubelet/containerd/Cilium, competing for the same `worker_instance_type` memory - see the
+  Configuration reference above for sizing guidance.
+
+To remove it from a worker without tearing down anything else:
+
+```sh
+ssh -i ~/.ssh/id_ed25519 ubuntu@<worker_ip> \
+  'sudo systemctl disable --now practice-novnc.service practice-vnc.service'
+```
 
 ## Destroying the lab
 

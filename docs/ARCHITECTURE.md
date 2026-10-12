@@ -22,7 +22,7 @@ for why that seam is a hard rule, not just a convention.
 flowchart TD
     subgraph CLOUD["Cloud-specific - providers/aws/*.tf"]
         VPC["aws_vpc + aws_subnet\naws_internet_gateway + aws_route_table"]
-        SG["aws_security_group\nSSH (22), API (6443), NodePort (30000-32767)\nfrom allowed_ssh_cidr; all traffic between lab nodes"]
+        SG["aws_security_group\nSSH (22), API (6443), NodePort (30000-32767),\nnoVNC (6080) from allowed_ssh_cidr; all traffic between lab nodes"]
         KEY["aws_key_pair\n(your ssh_public_key)"]
         CP_VM["aws_instance.control_plane"]
         WK_VM["aws_instance.worker[count]"]
@@ -42,20 +42,24 @@ flowchart TD
         NC["node-common.sh\non every node: containerd, kubelet, kubeadm, kubectl"]
         CTL["control-plane.sh\nkubeadm init + Cilium install +\ngenerates the worker join command"]
         WRK["worker.sh\non every worker: kubeadm join"]
+        DGUI["deploy-practice-gui.sh\nXFCE + noVNC on every worker, opt-in via PRACTICE_GUI_DEPLOY=1,\nonce that worker has joined"]
         DAPP["deploy-appliance.sh\nhelm installs clusterdrill, opt-in via CLUSTERDRILL_DEPLOY=1,\nonly after every worker has joined"]
         DASH["deploy-headlamp.sh\ninstalls Headlamp, only after every worker has joined"]
         RUN --> NC
         NC --> CTL
         NC --> WRK
         CTL -->|join command| WRK
+        WRK -->|"this worker joined"| DGUI
         WRK -->|"every worker joined"| DAPP
         DAPP --> DASH
     end
 
     OUT -->|"terraform output -json"| RUN
 
+    DESKTOP["Practice desktop (XFCE)\nrunning directly on the worker VM"]
     APP["clusterdrill appliance\nclusterdrill-system namespace"]
     DASHBOARD["Headlamp dashboard\nheadlamp-system namespace"]
+    DGUI --> DESKTOP
     DAPP --> APP
     DASH --> DASHBOARD
 
@@ -64,6 +68,7 @@ flowchart TD
     OPERATOR -->|"kubectl API (6443)"| CP_VM
     OPERATOR -->|"NodePort (30000-32767)"| APP
     OPERATOR -->|"NodePort (30000-32767)"| DASHBOARD
+    OPERATOR -->|"noVNC (6080)"| DESKTOP
 ```
 
 Reading order:
@@ -78,13 +83,17 @@ Reading order:
    AWS-specific code anywhere; it only ever reads these four values.
 3. **`bootstrap/run.sh`** reads that JSON and, over SSH, drives every other script in order: first
    `node-common.sh` on every node, then `control-plane.sh` on the control-plane node alone, then
-   `worker.sh` on each worker once the join command exists. Only after every worker has joined does
-   it run `deploy-appliance.sh` (`helm install`/`upgrade` against the published `clusterdrill`
-   chart) and then `deploy-headlamp.sh` - both Deployments lack a toleration for the control-plane's
+   `worker.sh` on each worker once the join command exists. Once a worker has joined, and only if
+   the operator set `PRACTICE_GUI_DEPLOY=1`, it runs `deploy-practice-gui.sh` on that worker - a
+   plain VM setup step (packages and systemd units), not a Kubernetes Deployment, so it has no
+   taint/scheduling constraint to wait on. Only after **every** worker has joined does it run
+   `deploy-appliance.sh` (`helm install`/`upgrade` against the published `clusterdrill` chart) and
+   then `deploy-headlamp.sh` - both of those Deployments lack a toleration for the control-plane's
    own taint, so deploying either earlier just hangs until `kubectl rollout status` times out.
-   `deploy-appliance.sh` is also the one opt-in step in this whole flow: it only runs when the
-   operator sets `CLUSTERDRILL_DEPLOY=1`; unset, `run.sh` still produces a bare, working cluster
-   with Headlamp but no `clusterdrill` footprint. See
+   `deploy-practice-gui.sh` and `deploy-appliance.sh` are the two opt-in steps in this whole flow:
+   they only run when the operator sets `PRACTICE_GUI_DEPLOY=1` / `CLUSTERDRILL_DEPLOY=1`
+   respectively; both unset, `run.sh` still produces a bare, working cluster with Headlamp but no
+   practice desktop and no `clusterdrill` footprint. See
    [`bootstrap/README.md`](../bootstrap/README.md#flow) for the full flow this diagram mirrors.
 4. The result is a bare Kubernetes cluster with a **Headlamp** dashboard (`headlamp-system`
    namespace) and, if `CLUSTERDRILL_DEPLOY=1` was set, a running **`clusterdrill`** appliance
@@ -92,7 +101,9 @@ Reading order:
    `nodeport_range` rule already permits reaching either from the operator's own CIDR - see
    [`providers/aws/README.md`](../providers/aws/README.md#verifying-the-lab) and its
    [Headlamp section](../providers/aws/README.md#headlamp-dashboard) for the exact commands and
-   login flow.
+   login flow. If `PRACTICE_GUI_DEPLOY=1` was set, each worker also runs an XFCE desktop reachable
+   over noVNC at its own `:6080` - see
+   [`providers/aws/README.md`'s Practice GUI section](../providers/aws/README.md#practice-gui-opt-in-desktop).
 
 ## 2. Component diagram: inside a single node
 
