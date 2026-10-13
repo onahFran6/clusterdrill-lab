@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.4](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.3...clusterdrill-lab-v0.1.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **bootstrap:** retry transient download failures in practice-tools.sh ([c765507](https://github.com/onahFran6/clusterdrill-lab/commit/c765507913935bd59d1638d297469dd17590abc1))
+* **bootstrap:** retry transient download failures in practice-tools.sh ([#20](https://github.com/onahFran6/clusterdrill-lab/issues/20)) ([51a2c73](https://github.com/onahFran6/clusterdrill-lab/commit/51a2c738e2da2eb42ec2c0b876d75db68c520a0e))
+
 ## [0.1.3](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.2...clusterdrill-lab-v0.1.3) (2026-10-12)
 
 
