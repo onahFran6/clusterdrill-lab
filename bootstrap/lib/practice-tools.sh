@@ -74,8 +74,8 @@ install_helm() {
   # get.helm.sh is Helm's own official binary distribution point - GitHub's
   # release assets for this project are detached PGP signatures only, never
   # the tarball itself.
-  curl -fsSL -o "${workdir}/${tarball}" "https://get.helm.sh/${tarball}"
-  curl -fsSL -o "${workdir}/${tarball}.sha256sum" "https://get.helm.sh/${tarball}.sha256sum"
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "${workdir}/${tarball}" "https://get.helm.sh/${tarball}"
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "${workdir}/${tarball}.sha256sum" "https://get.helm.sh/${tarball}.sha256sum"
   # Verified inside workdir, not the caller's cwd - sha256sum -c reads the
   # checksum file's own recorded filename relative to its current directory.
   (cd "$workdir" && sha256sum -c "${tarball}.sha256sum")
@@ -99,13 +99,18 @@ install_kustomize() {
   # See install_helm's own comment on why this one variable isn't `local`.
   workdir="$(mktemp -d)"
   trap 'rm -rf "$workdir"' EXIT
-  curl -fsSL -o "${workdir}/${tarball}" "${base_url}/${tarball}"
+  curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "${workdir}/${tarball}" "${base_url}/${tarball}"
   # checksums.txt covers every platform in this one release, not just
   # linux/$goarch - fetched separately from the filter below, so a failed
   # download (network error, GitHub outage, rate limit) gets its own clear
   # error here rather than being mistaken for the no-checksum-entry case
-  # the filter step guards against next.
-  if ! curl -fsSL -o "${workdir}/checksums-all.txt" "${base_url}/checksums.txt"; then
+  # the filter step guards against next. --retry also covers the transient
+  # GitHub release-asset 500s seen in practice (a plain re-run of this
+  # script was otherwise enough to succeed, meaning no real outage, just a
+  # single flaky request) - 3 attempts, 2s apart, retrying on any error
+  # (`--retry-all-errors`) rather than curl's narrower default of
+  # connection/5xx-only.
+  if ! curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "${workdir}/checksums-all.txt" "${base_url}/checksums.txt"; then
     echo "practice-tools: failed to download kustomize ${KUSTOMIZE_VERSION}'s checksums.txt from ${base_url}" >&2
     exit 1
   fi
