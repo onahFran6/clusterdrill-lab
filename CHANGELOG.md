@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.2...clusterdrill-lab-v0.1.3) (2026-10-12)
+
+
+### Features
+
+* **bootstrap:** add opt-in practice GUI desktop for CKAD exam practice ([4ce2d41](https://github.com/onahFran6/clusterdrill-lab/commit/4ce2d4155a3135285fb0dea161b93be20bedc4ed))
+* **bootstrap:** add opt-in practice GUI desktop for CKAD exam practice ([a498d57](https://github.com/onahFran6/clusterdrill-lab/commit/a498d5709761775af038bf62f298a6d959f96bca))
+* **bootstrap:** bring Helm-based clusterdrill install, CKAD practice tooling, and practice GUI desktop to main ([1e2fa60](https://github.com/onahFran6/clusterdrill-lab/commit/1e2fa607b363865341824841bce48839ff0a1b2f))
+* **bootstrap:** install clusterdrill via its published Helm chart, opt-in ([ffc4875](https://github.com/onahFran6/clusterdrill-lab/commit/ffc48758543eb509169f7124f6ca993332c08050))
+
+
+### Bug Fixes
+
+* **bootstrap:** make run.sh's /tmp/lib sync safe on a re-run ([c9a472c](https://github.com/onahFran6/clusterdrill-lab/commit/c9a472c0c002bade6d70c35e2afb43727e74c2cd))
+
 ## [0.1.2](https://github.com/onahFran6/clusterdrill-lab/compare/clusterdrill-lab-v0.1.1...clusterdrill-lab-v0.1.2) (2026-09-07)
 
 
